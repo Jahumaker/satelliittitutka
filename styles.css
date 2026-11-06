@@ -10,4 +10,6 @@
 @media (min-aspect-ratio:1/1){.filters{grid-row:3}.search-panel{grid-column:2;grid-row:4;align-self:start}.detail{grid-row:5}.lower{grid-row:6}.map-section{grid-row:3/7}footer{grid-row:7}.search-popover{max-height:65vh}.multi-tracking .tracked-measurements strong{font-size:calc(2.35 * var(--u))}.tracked-heading>strong{font-size:calc(2.2 * var(--u))}}
 @media (max-width:480px) and (max-aspect-ratio:1/1){body.multi-tracking .map-section{height:calc(59 * var(--u))}}
 [hidden]{display:none!important}
+.map-top{flex-wrap:wrap;gap:.5em}.map-controls{flex-wrap:wrap}.leaflet-control-zoom a{width:42px!important;height:42px!important;line-height:42px!important;font-size:26px!important}.leaflet-top.leaflet-left{top:calc(12 * var(--u))}.map-controls button{min-height:32px}.map-label{max-width:100%}
+@media (max-width:480px){.map-controls{font-size:11px}.map-label{font-size:10px}.map-top{top:8px;left:8px;right:8px}.leaflet-top.leaflet-left{top:85px}.leaflet-control-zoom a{width:32px!important;height:32px!important;line-height:32px!important;font-size:22px!important}}
 @media (min-aspect-ratio:1/1){:root{--u:min(.7vw,.80vh)}}

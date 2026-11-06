@@ -9,6 +9,9 @@
   const TRACK_COLORS=['#59edbf','#ffce63','#d5a3ff'];
   let map, canvas, ctx, data, sats=[], points=[], allPoints=[], selected=null, filter='all', world=false, auto=true, track=null;
   let tracked=[], searchSignature='', detailSignature='';
+  const viewParams=new URLSearchParams(location.search), savedView=(viewParams.get('view')||'').split(',').map(Number);
+  const hasSavedView=savedView.length===3&&savedView.every(Number.isFinite)&&Math.abs(savedView[0])<=85&&Math.abs(savedView[1])<=180&&savedView[2]>=-2&&savedView[2]<=8;
+  let viewMode=hasSavedView?'custom':'region', settingView=false, viewTimer;
   const requestedIds=[...new Set((new URLSearchParams(location.search).get('track')||'').split(',').map(Number).filter(n=>Number.isInteger(n)&&n>0))].slice(0,3);
   const isTracked=id=>tracked.some(t=>t.id===id);
   const colorFor=s=>tracked.find(t=>t.id===s.id)?.color||COLORS[s.group];
@@ -31,7 +34,21 @@
     }catch(e){return null;}
   }
   function saveSelection(){try{const url=new URL(location.href);if(tracked.length)url.searchParams.set('track',tracked.map(t=>t.id).join(','));else url.searchParams.delete('track');history.replaceState(null,'',url);}catch(e){/* Some embedded previews do not permit address changes. */}}
-  function fitTracked(){const locations=allPoints.filter(p=>isTracked(p.s.id)).map(p=>[p.lat,p.lon]);if(!locations.length)return;if(locations.length===1)map.setView(locations[0],3,{animate:false});else map.fitBounds(locations,{padding:[55,70],maxZoom:4,animate:false});$('map-title').textContent='VALITUT SATELLIITIT';}
+  function saveMapView(){clearTimeout(viewTimer);viewTimer=setTimeout(()=>{try{const url=new URL(location.href),c=map.getCenter();url.searchParams.set('view',[c.lat.toFixed(4),c.wrap().lng.toFixed(4),map.getZoom()].join(','));history.replaceState(null,'',url);}catch(e){}},180);}
+  function applyMapView(mode){
+    settingView=true;viewMode=mode;world=mode==='world';
+    const size=map.getSize(),padding=Math.min(35,size.x*.06,size.y*.06);
+    if(mode==='world')map.fitBounds([[-75,-180],[80,180]],{padding:[padding,padding],animate:false});
+    else if(mode==='region')map.fitBounds([[45,-12],[72,55]],{padding:[padding,padding],maxZoom:3,animate:false});
+    else if(mode==='tracked'){
+      const locations=allPoints.filter(p=>isTracked(p.s.id)).map(p=>[p.lat,p.lon]);
+      if(locations.length===1)map.setView(locations[0],2.5,{animate:false});
+      else if(locations.length)map.fitBounds(locations,{padding:[padding+15,padding+25],maxZoom:3,animate:false});
+    }
+    $('map-title').textContent=mode==='world'?'MAAILMANKARTTA':mode==='tracked'?'VALITUT SATELLIITIT':'POHJOIS-EUROOPPA';
+    settingView=false;saveMapView();draw();
+  }
+  function fitTracked(){if(allPoints.some(p=>isTracked(p.s.id)))applyMapView('tracked');}
   function changeTracking(){lastTrail=0;detailSignature='';searchSignature='';auto=tracked.length===0;lastAuto=Date.now();selected=tracked.length?sats.find(s=>s.id===tracked[0].id):null;saveSelection();updateAuto();renderTracking();tick();}
   function addTracked(s,fit=true){if(isTracked(s.id)){if(fit)fitTracked();return;}if(tracked.length>=3){$('search-message').textContent='Kolme kohdetta on jo valittu. Poista ensin yksi valinta.';return;}const color=TRACK_COLORS.find(c=>!tracked.some(t=>t.color===c));tracked.push({id:s.id,color});changeTracking();if(fit)fitTracked();}
   function removeTracked(id){tracked=tracked.filter(t=>t.id!==id);changeTracking();}
@@ -162,22 +179,24 @@
       for(const item of json.satellites){try{const omm=item.omm;if(!omm||!Number.isFinite(Number(omm.NORAD_CAT_ID))||!GROUPS[item.group])throw new Error('Ratatietue puuttuu');const epoch=Date.parse(omm.EPOCH+( /Z$|[+-]\d\d:\d\d$/.test(omm.EPOCH)?'':'Z'));if(!Number.isFinite(epoch))throw new Error('Epoch');const rec=satellite.json2satrec(omm);if(rec.error)throw new Error('SGP4 '+rec.error);next.push({id:Number(omm.NORAD_CAT_ID),name:omm.OBJECT_NAME,group:item.group,omm,rec,epoch});}catch(e){invalid++;}}
       if(!next.length)throw new Error('Ratojen laskenta ei onnistunut');data=json;sats=next;lastError=invalid?invalid+' virheellistä ratatietuetta ohitettu':'';generation++;
       if(generation===1&&requestedIds.length){for(const id of requestedIds){tracked.push({id,color:TRACK_COLORS[tracked.length]});}auto=!tracked.length;}
-      lastTrail=0;lastPass=0;lastRows=0;detailSignature='';searchSignature='';updateAuto();renderTracking();tick();if(generation===1&&tracked.length)fitTracked();
+      lastTrail=0;lastPass=0;lastRows=0;detailSignature='';searchSignature='';updateAuto();renderTracking();tick();if(generation===1&&tracked.length&&!hasSavedView)fitTracked();
     }catch(e){console.error('Satelliittitutka:',e);lastError='Ratatietojen päivitys epäonnistui';if(!data){status(lastError+': '+e.message,'error');$('selected-name').textContent='Ratatiedot eivät latautuneet';$('near-list').textContent='Tarkista verkkoyhteys ja data/orbits.json.';$('pass-time').textContent='Ei ratatietoa';}else renderStatus();}
     finally{refreshing=false;$('refresh').disabled=false;}
   }
   function init(){
     clock();if(typeof L==='undefined'||typeof satellite==='undefined'||typeof satellite.json2satrec!=='function'){status('Kartta- tai ratalaskentakirjasto ei latautunut. Tarkista verkkoyhteys.','error');$('selected-name').textContent='Tarvittava kirjasto puuttuu';return;}
-    canvas=$('satellites');ctx=canvas.getContext('2d');map=L.map('map',{center:[59,25],zoom:3,minZoom:1,maxZoom:8,zoomSnap:.5,worldCopyJump:false,maxBounds:[[-85,-180],[85,180]],attributionControl:true});
-    const tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',maxZoom:8,noWrap:true}).addTo(map);
+    canvas=$('satellites');ctx=canvas.getContext('2d');map=L.map('map',{center:hasSavedView?savedView.slice(0,2):[59,25],zoom:hasSavedView?savedView[2]:2,minZoom:-2,maxZoom:8,zoomSnap:.5,zoomDelta:.5,zoomAnimation:false,worldCopyJump:false,attributionControl:true});
+    const tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',minZoom:-2,minNativeZoom:0,maxZoom:8,noWrap:true}).addTo(map);
     tiles.on('tileerror',()=>{if(++tileErrors>=3)$('map-error').hidden=false;});tiles.on('tileload',()=>{tileErrors=0;$('map-error').hidden=true;});
     for(let lat=-60;lat<=60;lat+=30)L.polyline([[lat,-180],[lat,180]],{color:'#80b3c3',weight:.5,opacity:.18,interactive:false}).addTo(map);
     for(let lon=-180;lon<=180;lon+=30)L.polyline([[-85,lon],[85,lon]],{color:'#80b3c3',weight:.5,opacity:.18,interactive:false}).addTo(map);
     L.circle([60.1699,24.9384],{radius:1500000,color:'#59edbf',weight:1,dashArray:'4 7',opacity:.35,fillColor:'#59edbf',fillOpacity:.025,interactive:false}).addTo(map);
     L.circleMarker([60.1699,24.9384],{radius:4,color:'#f0f5f5',weight:1,fillColor:'#59edbf',fillOpacity:1}).addTo(map).bindTooltip('HELSINKI',{direction:'bottom',permanent:true,className:'home-label'});
     map.on('move zoom resize',draw);map.on('click',e=>{let best=null,range=24;for(const p of painted){const d=Math.hypot(p.x-e.containerPoint.x,p.y-e.containerPoint.y);if(d<range){best=p;range=d;}}if(best)select(best.s,true);});
-    new ResizeObserver(()=>{map.invalidateSize({animate:false});draw();}).observe($('map'));
-    $('region').onclick=()=>{world=!world;map.setView(world?[15,10]:[59,25],world?1.5:3,{animate:false});$('region').textContent=world?'Suomi':'Maailma';$('map-title').textContent=world?'MAAILMANKARTTA':'POHJOIS-EUROOPPA';};
+    map.on('moveend zoomend',()=>{if(!settingView){viewMode='custom';world=map.getZoom()<=2;$('map-title').textContent='OMA KARTTARAJAUS';}saveMapView();});
+    new ResizeObserver(()=>{const mode=viewMode;settingView=true;map.invalidateSize({animate:false,pan:false});settingView=false;if(mode!=='custom')applyMapView(mode);draw();}).observe($('map'));
+    if(!hasSavedView)applyMapView('region');else $('map-title').textContent='OMA KARTTARAJAUS';
+    $('region').onclick=()=>applyMapView('world');$('finland').onclick=()=>applyMapView('region');$('map-fit-tracked').onclick=fitTracked;
     $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch(e){status('Koko näyttö ei ole tässä näkymässä sallittu. Käytä selaimen koko näytön tilaa.','warning');}};
     $('auto').onclick=()=>{if(tracked.length){tracked=[];changeTracking();}else{auto=!auto;lastAuto=Date.now();updateAuto();}};$('refresh').onclick=loadData;
     $('sat-search').oninput=()=>{searchSignature='';renderSearch();};
@@ -187,7 +206,7 @@
     document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===b));selected=null;lastRows=0;lastTrail=0;tick();});
     loadData();setInterval(tick,1000);setInterval(loadData,15*60000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();loadData();}});
-    window.radarDiagnostics=()=>({loaded:sats.length,calculated:points.length,selected:selected?.name,tracked:tracked.map(t=>({...t,name:sats.find(s=>s.id===t.id)?.name})),tracks:track?.getLayers().length||0,trackedVisible:painted.filter(p=>isTracked(p.s.id)).map(p=>p.s.id),auto,filter,generation,dataGeneratedAt:data?.generatedAt,pass,lastError,mapSize:map.getSize(),library:typeof satellite.json2satrec});
+    window.radarDiagnostics=()=>({loaded:sats.length,calculated:points.length,selected:selected?.name,tracked:tracked.map(t=>({...t,name:sats.find(s=>s.id===t.id)?.name})),tracks:track?.getLayers().length||0,trackedVisible:painted.filter(p=>isTracked(p.s.id)).map(p=>p.s.id),auto,filter,generation,dataGeneratedAt:data?.generatedAt,pass,lastError,mapSize:map.getSize(),zoom:map.getZoom(),center:map.getCenter(),bounds:map.getBounds(),viewMode,library:typeof satellite.json2satrec});
   }
   init();
 })();
