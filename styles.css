@@ -13,3 +13,21 @@
 .map-top{flex-wrap:wrap;gap:.5em}.map-controls{flex-wrap:wrap}.leaflet-control-zoom a{width:42px!important;height:42px!important;line-height:42px!important;font-size:26px!important}.leaflet-top.leaflet-left{top:calc(12 * var(--u))}.map-controls button{min-height:32px}.map-label{max-width:100%}
 @media (max-width:480px){.map-controls{font-size:11px}.map-label{font-size:10px}.map-top{top:8px;left:8px;right:8px}.leaflet-top.leaflet-left{top:85px}.leaflet-control-zoom a{width:32px!important;height:32px!important;line-height:32px!important;font-size:22px!important}}
 @media (min-aspect-ratio:1/1){:root{--u:min(.7vw,.80vh)}}
+
+/* Wall display: use the full physical screen, including 4K portrait players. */
+@media (max-aspect-ratio:1/1){
+  .dashboard{max-width:none;padding:calc(2.5 * var(--u));gap:calc(1.5 * var(--u))}
+  .map-section,body.multi-tracking .map-section{height:calc(52 * var(--u));min-height:0;flex-shrink:0}
+  .map-top{align-items:flex-start}
+  .map-label{font-size:calc(1.5 * var(--u))}
+  .map-controls{font-size:calc(1.4 * var(--u))}
+  .lower{flex:0 0 auto}
+  .detail{padding:calc(1.8 * var(--u))}
+  .tracked-heading>strong{font-size:calc(3 * var(--u))}
+  .tracked-measurements strong{font-size:calc(3.1 * var(--u))}
+  .tracked-note{font-size:calc(1.35 * var(--u))}
+  .pass-panel p{margin:.35em 0}
+}
+.background-toggle{display:flex;align-items:center;gap:.45em;padding:.55em .7em;background:#07151de8;border:1px solid var(--line);border-radius:7px;pointer-events:auto;white-space:nowrap}
+.background-toggle input{accent-color:var(--mint);margin:0}
+.display-version{color:#859ea9;white-space:nowrap}

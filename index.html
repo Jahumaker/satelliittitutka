@@ -5,10 +5,10 @@
   <meta name="theme-color" content="#07151d">
   <title>Satelliittitutka — toimitusnäyttö</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20261106-wall-wide">
   <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/satellite.js@6.0.1/dist/satellite.min.js"></script>
-  <script defer src="app.js?v=20261106-local-map"></script>
+  <script defer src="app.js?v=20261106-wall-wide"></script>
 </head>
 <body>
 <main class="dashboard">
@@ -25,6 +25,7 @@
   <section class="map-section" aria-label="Satelliittien kartta">
     <div id="map"></div><canvas id="satellites" aria-hidden="true"></canvas>
     <div class="map-top"><span class="map-label"><i></i><span id="map-title">POHJOIS-EUROOPPA</span></span><div class="map-controls"><button id="region" type="button">Maailma</button><button id="finland" type="button">Suomi</button><button id="map-fit-tracked" type="button" title="Sovita valitut satelliitit kartalle">Valitut</button><button id="fullscreen" type="button" title="Koko näyttö" aria-label="Koko näyttö">⛶</button></div></div>
+    <label class="background-toggle" id="background-control"><input type="checkbox" id="show-background">Näytä muut satelliitit</label>
     <div class="map-error" id="map-error" hidden>Karttapohjan lataus epäonnistui. Ratapisteet näkyvät edelleen.</div>
     <div class="map-bottom"><span><b class="key station"></b>Avaruusasemat</span><span><b class="key weather"></b>Sää / maanhavainnointi</span><span><b class="key other"></b>Tiede / navigointi</span></div>
   </section>
@@ -39,7 +40,7 @@
       <p id="search-message" role="status">Voit valita enintään kolme kohdetta. Haku kattaa ladatun satelliittivalikoiman.</p>
       <div id="search-results" aria-label="Hakutulokset"></div>
       <div class="search-actions"><button id="fit-tracked" type="button">Näytä valitut kartalla</button><button id="clear-tracked" type="button">Tyhjennä valinnat</button><button id="close-search" type="button">Valmis</button></div>
-      <p class="link-note">Valinnat, kartan rajaus ja zoomaus tallentuvat osoitteeseen. Säädä kartta ja kopioi selaimen osoite QEM:ään. Loitonna kartan −-painikkeella tai hiiren rullalla.</p>
+      <p class="link-note">Valitut satelliitit avautuvat koko maailman näkymään. Ne pysyvät kartalla ilman käsin säätämistä. Valinnat tallentuvat osoitteeseen.</p>
     </div>
   </details>
   <section class="detail" aria-live="off">
