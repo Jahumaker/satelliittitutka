@@ -81,9 +81,11 @@
   function renderSearch(){
     if(!$('search-panel').open)return;
     const query=$('sat-search').value.trim().toLocaleLowerCase('fi-FI'),signature=query+'|'+tracked.map(t=>t.id).join(',')+'|'+generation;if(searchSignature===signature)return;searchSignature=signature;
-    const matches=sats.filter(s=>(s.name+' '+s.id+' '+(s.id===48274?'Tiangong Tianhe Kiinan avaruusasema':'')+' '+(s.id===25544?'kansainvälinen avaruusasema':'')).toLocaleLowerCase('fi-FI').includes(query)).sort((a,b)=>Number(isTracked(b.id))-Number(isTracked(a.id))||a.name.localeCompare(b.name));
+    const normalizeSearch=text=>text.toLocaleLowerCase('fi-FI').replace(/iceye[\s-]*x(?=\s*\d)/g,'iceye').replace(/[^\p{L}\p{N}]/gu,'');
+    const terms=query.replace(/iceye[\s-]*x(?=\s*\d)/g,'iceye').split(/\s+/).map(normalizeSearch).filter(Boolean);
+    const matches=sats.filter(s=>{const text=normalizeSearch(s.name+' '+s.id+' '+(s.id===48274?'Tiangong Tianhe Kiinan avaruusasema':'')+' '+(s.id===25544?'kansainvälinen avaruusasema':''));return terms.every(term=>text.includes(term));}).sort((a,b)=>Number(isTracked(b.id))-Number(isTracked(a.id))||a.name.localeCompare(b.name));
     const list=$('search-results');list.replaceChildren();
-    $('search-message').textContent=matches.length?`${matches.length} osumaa${matches.length>40?' · Näytetään ensimmäiset 40, tarkenna hakua.':''}. Valitse enintään kolme.`:'Ei osumia ladatussa satelliittivalikoimassa.';
+    $('search-message').textContent=matches.length?`${matches.length} osumaa${matches.length>40?' · Näytetään ensimmäiset 40, tarkenna hakua':''}. Valitse enintään kolme.`:'Ei osumia ladatussa satelliittivalikoimassa.';
     for(const s of matches.slice(0,40)){const b=document.createElement('button');b.type='button';b.className='search-result';b.dataset.id=String(s.id);const chosen=isTracked(s.id);b.setAttribute('aria-pressed',String(chosen));b.disabled=!chosen&&(tracked.length>=3||ageHours(s)>168);
       const marker=document.createElement('span');marker.className='search-check';marker.textContent=chosen?'✓':'+';if(chosen)marker.style.color=colorFor(s);
       const info=document.createElement('span'),name=document.createElement('strong'),meta=document.createElement('small');name.textContent=s.name;meta.textContent='NORAD '+s.id+' · '+GROUPS[s.group]+(ageHours(s)>168?' · vanhentunut rata':'');info.append(name,meta);b.append(marker,info);b.onclick=()=>chosen?removeTracked(s.id):addTracked(s);list.append(b);}
