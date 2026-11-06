@@ -34,7 +34,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
       const lat=geo.latitude/RAD,lon=geo.longitude/RAD;
       if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(geo.height)||geo.height<80)return null;
       const ecf=satellite.eciToEcf(pv.position,gmst),look=satellite.ecfToLookAngles(HOME,ecf);
-      return {s,lat,lon,height:geo.height,speed:Math.hypot(pv.velocity.x,pv.velocity.y,pv.velocity.z)*3600,elevation:look.elevation/RAD,distance:dist(lat,lon,60.1699,24.9384)};
+      return {s,lat,lon,eci:pv.position,calculatedAt:when.getTime(),height:geo.height,speed:Math.hypot(pv.velocity.x,pv.velocity.y,pv.velocity.z)*3600,elevation:look.elevation/RAD,distance:dist(lat,lon,60.1699,24.9384)};
     }catch(e){return null;}
   }
   function saveSelection(){try{const url=new URL(location.href);if(tracked.length)url.searchParams.set('track',tracked.map(t=>t.id).join(','));else url.searchParams.delete('track');history.replaceState(null,'',url);}catch(e){/* Some embedded previews do not permit address changes. */}}
@@ -98,6 +98,34 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     for(const item of items){const span=document.createElement('span'),key=document.createElement('b');key.className='key';key.style.background=item.color;span.append(key,document.createTextNode(item.label));legend.append(span);}
     renderSearch();
   }
+  function renderSeparations(now){
+    const panel=$('separations'),list=$('separation-list');panel.hidden=tracked.length<2;
+    if(panel.hidden){list.replaceChildren();return;}
+    const signature=tracked.map(t=>t.id).join(',');
+    if(list.dataset.selection!==signature){
+      list.dataset.selection=signature;list.replaceChildren();
+      for(let i=0;i<tracked.length;i++)for(let j=i+1;j<tracked.length;j++){
+        const row=document.createElement('div');row.className='separation-row';row.dataset.a=tracked[i].id;row.dataset.b=tracked[j].id;
+        const names=document.createElement('span');names.className='separation-names';
+        for(const [n,t] of [tracked[i],tracked[j]].entries()){
+          if(n)names.append(document.createTextNode(' ↔ '));
+          const label=document.createElement('b');label.style.color=t.color;label.textContent=sats.find(s=>s.id===t.id)?.name||'NORAD '+t.id;names.append(label);
+        }
+        const value=document.createElement('strong');value.className='separation-value';row.append(names,value);list.append(row);
+      }
+    }
+    for(const row of list.children){
+      const a=allPoints.find(p=>p.s.id===Number(row.dataset.a)),b=allPoints.find(p=>p.s.id===Number(row.dataset.b));
+      const value=row.querySelector('.separation-value');
+      const fresh=a&&b&&ageHours(a.s,now.getTime())<=48&&ageHours(b.s,now.getTime())<=48;
+      if(!fresh){value.textContent='—';value.removeAttribute('data-km');row.title='Etäisyyttä ei näytetä: ratatieto puuttuu tai on yli 48 tuntia vanha.';row.classList.add('warning');continue;}
+      // Both vectors are in the same Earth-centred inertial frame at the exact same instant.
+      const km=Math.hypot(a.eci.x-b.eci.x,a.eci.y-b.eci.y,a.eci.z-b.eci.z);
+      value.dataset.km=String(km);value.textContent='≈ '+fmt.format(km)+' km';
+      row.classList.toggle('warning',km<10);row.title=km<10?'Laskennallinen lähietäisyys. Julkinen ratamalli ei varmista läheistä ohitusta.':'Suora kolmiulotteinen etäisyys, ei etäisyys maanpintaa pitkin.';
+    }
+    $('separation-time').textContent='LASKENTA '+new Intl.DateTimeFormat('fi-FI',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Europe/Helsinki'}).format(now);
+  }
   function renderSearch(){
     if(!$('search-panel').open)return;
     const query=$('sat-search').value.trim().toLocaleLowerCase('fi-FI'),signature=query+'|'+tracked.map(t=>t.id).join(',')+'|'+generation;if(searchSignature===signature)return;searchSignature=signature;
@@ -125,8 +153,9 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     const visible=displayPoints.map(p=>({...p,xy:map.latLngToContainerPoint([p.lat,p.lon])})).filter(p=>p.xy.x>-15&&p.xy.x<size.x+15&&p.xy.y>-15&&p.xy.y<size.y+15);
     const labelIds=new Set([...visible].sort((a,b)=>(a.s.id===selected?.id?-1:b.s.id===selected?.id?1:a.distance-b.distance)).slice(0,world?7:9).map(p=>p.s.id));
     const scale=Math.max(.65,Math.min(1.6,size.x/850)),labels=[];
-    for(const p of visible.sort((a,b)=>(a.s.id===selected?.id?1:b.s.id===selected?.id?-1:0))){
+    for(const p of visible.sort((a,b)=>Number(isTracked(a.s.id)||a.s.id===selected?.id)-Number(isTracked(b.s.id)||b.s.id===selected?.id))){
       const {x,y}=p.xy,isSelected=isTracked(p.s.id)||(!tracked.length&&p.s.id===selected?.id),color=colorFor(p.s),r=(isSelected?5:3)*scale;
+      if(tracked.length&&!isSelected){ctx.fillStyle='#a3b8c24d';ctx.beginPath();ctx.arc(x,y,Math.max(.65,.85*scale),0,Math.PI*2);ctx.fill();painted.push({x,y,s:p.s});continue;}
       if(visible.length>700&&!isSelected&&!labelIds.has(p.s.id)){painted.push({x,y,s:p.s});ctx.fillStyle=color;ctx.fillRect(x-1.3*scale,y-1.3*scale,2.6*scale,2.6*scale);continue;}
       painted.push({x,y,s:p.s});ctx.save();ctx.translate(x,y);ctx.fillStyle=color;ctx.strokeStyle=color;
       if(isSelected){ctx.beginPath();ctx.arc(0,0,13*scale,0,Math.PI*2);ctx.fillStyle=color+'24';ctx.fill();ctx.strokeStyle=color+'99';ctx.lineWidth=1;ctx.stroke();ctx.fillStyle=color;}
@@ -172,7 +201,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     if(!selected&&points.length)selected=[...points].sort((a,b)=>a.distance-b.distance)[0].s;}
     if(auto&&now.getTime()-lastAuto>=25000&&points.length){const near=[...points].sort((a,b)=>a.distance-b.distance).slice(0,8);const i=near.findIndex(p=>p.s.id===selected?.id);selected=near[(i+1)%near.length].s;lastAuto=now.getTime();lastTrail=0;}
     if(now.getTime()-lastTrail>45000)updateTrail(now);
-    renderDetail();renderRows(now.getTime());draw();renderStatus();renderSearch();
+    renderDetail();renderSeparations(now);renderRows(now.getTime());draw();renderStatus();renderSearch();
     if(now.getTime()-lastPass>600000)calculatePass();else renderPass();
   }
   async function loadData(){
@@ -208,8 +237,9 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch(e){status('Koko näyttö ei ole tässä näkymässä sallittu. Käytä selaimen koko näytön tilaa.','warning');}};
     $('auto').onclick=()=>{if(tracked.length){tracked=[];changeTracking();}else{auto=!auto;lastAuto=Date.now();updateAuto();}};$('refresh').onclick=loadData;
     document.querySelector('.map-controls').append($('background-control'));
-    $('show-background').onchange=draw;
-    const version=document.createElement('span');version.className='display-version';version.textContent=' · Näyttöversio 6.11. / 15.54';document.querySelector('footer').append(version);
+    $('show-background').checked=viewParams.get('bg')!=='0';
+    $('show-background').onchange=()=>{try{const url=new URL(location.href);url.searchParams.set('bg',$('show-background').checked?'1':'0');history.replaceState(null,'',url);}catch(e){}draw();};
+    const version=document.createElement('span');version.className='display-version';version.textContent=' · Näyttöversio 6.11. / 16.06';document.querySelector('footer').append(version);
     $('sat-search').oninput=()=>{searchSignature='';renderSearch();};
     $('search-panel').ontoggle=()=>{if($('search-panel').open){searchSignature='';renderSearch();$('sat-search').focus();}};
     $('sat-search').onkeydown=e=>{if(e.key==='Escape')$('search-panel').open=false;};

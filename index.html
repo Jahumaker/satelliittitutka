@@ -5,10 +5,10 @@
   <meta name="theme-color" content="#07151d">
   <title>Satelliittitutka — toimitusnäyttö</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=20261106-wall-wide">
+  <link rel="stylesheet" href="styles.css?v=20261106-distance">
   <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/satellite.js@6.0.1/dist/satellite.min.js"></script>
-  <script defer src="app.js?v=20261106-wall-wide"></script>
+  <script defer src="app.js?v=20261106-distance"></script>
 </head>
 <body>
 <main class="dashboard">
@@ -25,7 +25,7 @@
   <section class="map-section" aria-label="Satelliittien kartta">
     <div id="map"></div><canvas id="satellites" aria-hidden="true"></canvas>
     <div class="map-top"><span class="map-label"><i></i><span id="map-title">POHJOIS-EUROOPPA</span></span><div class="map-controls"><button id="region" type="button">Maailma</button><button id="finland" type="button">Suomi</button><button id="map-fit-tracked" type="button" title="Sovita valitut satelliitit kartalle">Valitut</button><button id="fullscreen" type="button" title="Koko näyttö" aria-label="Koko näyttö">⛶</button></div></div>
-    <label class="background-toggle" id="background-control"><input type="checkbox" id="show-background">Näytä muut satelliitit</label>
+    <label class="background-toggle" id="background-control"><input type="checkbox" id="show-background" checked>Muut pisteinä</label>
     <div class="map-error" id="map-error" hidden>Karttapohjan lataus epäonnistui. Ratapisteet näkyvät edelleen.</div>
     <div class="map-bottom"><span><b class="key station"></b>Avaruusasemat</span><span><b class="key weather"></b>Sää / maanhavainnointi</span><span><b class="key other"></b>Tiede / navigointi</span></div>
   </section>
@@ -50,6 +50,11 @@
     <div class="measurements"><div><strong id="height">—</strong><span>KORKEUS · KM</span></div><div><strong id="speed">—</strong><span>NOPEUS · KM/H</span></div><div><strong id="period">—</strong><span>KIERROS · MIN</span></div></div>
     <div class="detail-bottom"><span id="coordinates">—</span><span id="orbit-age">—</span></div>
     </div><div id="tracked-details" hidden></div>
+    <section id="separations" class="separations" hidden aria-label="Valittujen satelliittien laskennalliset etäisyydet">
+      <div class="separation-heading"><span class="eyebrow">KESKINÄISET ETÄISYYDET · 3D</span><span id="separation-time"></span></div>
+      <div id="separation-list"></div>
+      <p class="separation-note">Ratatiedoista laskettu arvio · päivittyy sekunnin välein. Ei mitattu etäisyys. Julkinen ratamalli ei varmista läheisiä ohituksia eikä häirintää. Yli 48 h vanhasta ratatiedosta etäisyyttä ei näytetä.</p>
+    </section>
   </section>
   <section class="lower">
     <div class="near-panel"><div class="panel-head"><h3>Lähimpänä Helsinkiä</h3><span>ETÄISYYS MAANPINNALLA</span></div><div id="near-list"><p class="empty">Ratatiedot latautuvat.</p></div></div>
