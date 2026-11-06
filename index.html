@@ -29,13 +29,13 @@
     <div class="map-bottom"><span><b class="key station"></b>Avaruusasemat</span><span><b class="key weather"></b>Sää / maanhavainnointi</span><span><b class="key other"></b>Tiede / navigointi</span></div>
   </section>
   <nav class="filters" aria-label="Satelliittiryhmä">
-    <button type="button" class="active" data-filter="all">Kaikki</button><button type="button" data-filter="weather">Sää</button><button type="button" data-filter="resource">Maanhavainnointi</button><button type="button" data-filter="science">Tiede</button><button type="button" data-filter="stations">Asemat</button><button type="button" data-filter="navigation">Navigointi</button>
+    <button type="button" class="active" data-filter="all">Kaikki</button><button type="button" data-filter="starlink">Starlink</button><button type="button" data-filter="active">Muut</button><button type="button" data-filter="weather">Sää</button><button type="button" data-filter="resource">Maanhavainnointi</button><button type="button" data-filter="science">Tiede</button><button type="button" data-filter="stations">Asemat</button><button type="button" data-filter="navigation">Navigointi</button>
   </nav>
   <details class="search-panel" id="search-panel">
     <summary><span>⌕ Hae ja valitse satelliitteja</span><span id="tracking-count">0 / 3 valittu</span></summary>
     <div class="search-popover">
       <label for="sat-search">Hae nimellä tai NORAD-tunnuksella</label>
-      <input id="sat-search" type="search" placeholder="ISS, NOAA, Sentinel tai 25544…" autocomplete="off">
+      <input id="sat-search" type="search" placeholder="ISS, Starlink, OneWeb tai NORAD-tunnus…" autocomplete="off">
       <p id="search-message" role="status">Voit valita enintään kolme kohdetta. Haku kattaa ladatun satelliittivalikoiman.</p>
       <div id="search-results" aria-label="Hakutulokset"></div>
       <div class="search-actions"><button id="fit-tracked" type="button">Näytä valitut kartalla</button><button id="clear-tracked" type="button">Tyhjennä valinnat</button><button id="close-search" type="button">Valmis</button></div>

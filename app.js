@@ -2,8 +2,8 @@
 (() => {
   const $ = id => document.getElementById(id);
   const RAD = Math.PI / 180, HOME = {latitude:60.1699*RAD,longitude:24.9384*RAD,height:.025};
-  const GROUPS = {stations:'Avaruusasema',weather:'Sääsatelliitti',resource:'Maanhavainnointi',science:'Tiedesatelliitti',navigation:'Navigointisatelliitti'};
-  const COLORS = {stations:'#ffce63',weather:'#59edbf',resource:'#59edbf',science:'#70baff',navigation:'#70baff'};
+  const GROUPS = {stations:'Avaruusasema',weather:'Sääsatelliitti',resource:'Maanhavainnointi',science:'Tiedesatelliitti',navigation:'Navigointisatelliitti',starlink:'Starlink',active:'Muu aktiivinen satelliitti'};
+  const COLORS = {stations:'#ffce63',weather:'#59edbf',resource:'#59edbf',science:'#70baff',navigation:'#70baff',starlink:'#91a8c5',active:'#c79dea'};
   const fmt = new Intl.NumberFormat('fi-FI',{maximumFractionDigits:0});
   const hhmm = d => new Intl.DateTimeFormat('fi-FI',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Helsinki'}).format(d);
   const TRACK_COLORS=['#59edbf','#ffce63','#d5a3ff'];
@@ -74,6 +74,7 @@
     $('tracking-count').textContent=tracked.length+' / 3 valittu';$('detail-label').textContent=tracked.length?'VALITUT KOHTEET · '+tracked.length+' / 3':'SEURATTAVA KOHDE';$('single-detail').hidden=!!tracked.length;$('tracked-details').hidden=!tracked.length;document.body.classList.toggle('multi-tracking',tracked.length>=2);
     $('clear-tracked').disabled=!tracked.length;$('fit-tracked').disabled=!tracked.length;
     const legend=document.querySelector('.map-bottom');legend.replaceChildren();const items=tracked.length?tracked.map(t=>({color:t.color,label:sats.find(s=>s.id===t.id)?.name||'NORAD '+t.id})):[{color:COLORS.stations,label:'Avaruusasemat'},{color:COLORS.weather,label:'Sää / maanhavainnointi'},{color:COLORS.science,label:'Tiede / navigointi'}];
+    if(!tracked.length)items.push({color:COLORS.starlink,label:'Starlink'},{color:COLORS.active,label:'Muut aktiiviset'});
     for(const item of items){const span=document.createElement('span'),key=document.createElement('b');key.className='key';key.style.background=item.color;span.append(key,document.createTextNode(item.label));legend.append(span);}
     renderSearch();
   }
@@ -98,12 +99,13 @@
   function draw(){
     if(!map||!ctx)return;const size=map.getSize(),dpr=Math.min(2,window.devicePixelRatio||1);
     if(canvas.width!==Math.round(size.x*dpr)||canvas.height!==Math.round(size.y*dpr)){canvas.width=Math.round(size.x*dpr);canvas.height=Math.round(size.y*dpr);}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,size.x,size.y);painted=[];
-    const displayPoints=allPoints.filter(p=>points.includes(p)||isTracked(p.s.id));
+    const displayPoints=allPoints.filter(p=>filter==='all'||p.s.group===filter||isTracked(p.s.id));
     const visible=displayPoints.map(p=>({...p,xy:map.latLngToContainerPoint([p.lat,p.lon])})).filter(p=>p.xy.x>-15&&p.xy.x<size.x+15&&p.xy.y>-15&&p.xy.y<size.y+15);
     const labelIds=new Set([...visible].sort((a,b)=>(a.s.id===selected?.id?-1:b.s.id===selected?.id?1:a.distance-b.distance)).slice(0,world?7:9).map(p=>p.s.id));
     const scale=Math.max(.65,Math.min(1.6,size.x/850)),labels=[];
     for(const p of visible.sort((a,b)=>(a.s.id===selected?.id?1:b.s.id===selected?.id?-1:0))){
       const {x,y}=p.xy,isSelected=isTracked(p.s.id)||(!tracked.length&&p.s.id===selected?.id),color=colorFor(p.s),r=(isSelected?5:3)*scale;
+      if(visible.length>700&&!isSelected&&!labelIds.has(p.s.id)){painted.push({x,y,s:p.s});ctx.fillStyle=color;ctx.fillRect(x-1.3*scale,y-1.3*scale,2.6*scale,2.6*scale);continue;}
       painted.push({x,y,s:p.s});ctx.save();ctx.translate(x,y);ctx.fillStyle=color;ctx.strokeStyle=color;
       if(isSelected){ctx.beginPath();ctx.arc(0,0,13*scale,0,Math.PI*2);ctx.fillStyle=color+'24';ctx.fill();ctx.strokeStyle=color+'99';ctx.lineWidth=1;ctx.stroke();ctx.fillStyle=color;}
       ctx.rotate(-Math.PI/5);ctx.fillRect(-r*.6,-r,r*1.2,r*2);ctx.fillRect(-r*2.6,-r*.85,r*1.3,r*1.7);ctx.fillRect(r*1.3,-r*.85,r*1.3,r*1.7);ctx.beginPath();ctx.moveTo(-r*2,0);ctx.lineTo(r*2,0);ctx.lineWidth=.8;ctx.stroke();ctx.restore();
@@ -122,7 +124,7 @@
     if(lastError)status(lastError+' · Käytössä edellinen aineisto.','warning');
     else if(hours>8)status('PÄIVITYS VIIVÄSTYNYT · '+text,'warning');
     else status(text+' · '+sats.length+' kohdetta',stale?'warning':'');
-    $('data-note').textContent=`CelesTrak · SGP4-ratalaskenta · Ei paikannustelemetriaa. ${stale?'Yli 48 h vanhoja ratoja: '+stale+'. ':''}${excluded?'Yli 7 vrk vanhat '+excluded+' kohdetta piilotettu. ':''}Valikoidut ryhmät, ei koko kiertorata.`;
+    $('data-note').textContent=`CelesTrak · SGP4-ratalaskenta · Ei paikannustelemetriaa. ${stale?'Yli 48 h vanhoja ratoja: '+stale+'. ':''}${excluded?'Yli 7 vrk vanhat '+excluded+' kohdetta piilotettu. ':''}${data.groups?.includes('active')?'Aktiivisten satelliittien luettelo, myös Starlink. Ei romua eikä salassa pidettäviä ratoja.':'Rajattu lähtöaineisto. Laajennettu aineisto odottaa päivitysajoa.'}`;
   }
   function calculatePass(){
     lastPass=Date.now();const iss=sats.find(s=>s.id===25544);pass=null;

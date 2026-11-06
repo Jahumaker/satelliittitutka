@@ -21,7 +21,7 @@ Kartan ja ratalaskennan kirjastot latautuvat jsDelivristä; karttatiilet OpenStr
 
 ## Haku ja 1–3 satelliitin seuranta
 
-Avaa **Hae ja valitse satelliitteja**. Kirjoita nimi, nimen osa tai NORAD-tunnus. Haku kattaa sivulle ladatun 350 kohteen lähtövalikoiman, ei kaikkia maailman satelliitteja. Esimerkiksi `ISS`, `NOAA`, `Sentinel`, `Tiangong` tai `25544` toimivat hakusanoina valikoiman sisältämille kohteille. Kirjainkoolla ei ole merkitystä. Hakutuloksista näytetään enintään 40 kerrallaan; rajaa hakua tarvittaessa.
+Avaa **Hae ja valitse satelliitteja**. Kirjoita nimi, nimen osa tai NORAD-tunnus. Haku kattaa CelesTrakin aktiivisten satelliittien luettelon, myös Starlinkit ja OneWebit. Luettelo ei sisällä kaikkia kiertoradalla olevia kappaleita eikä salassa pidettäviä ratoja. Esimerkiksi `ISS`, `NOAA`, `Sentinel`, `Tiangong` tai `25544` toimivat hakusanoina valikoiman sisältämille kohteille. Kirjainkoolla ei ole merkitystä. Hakutuloksista näytetään enintään 40 kerrallaan; rajaa hakua tarvittaessa.
 
 Valitse yhdestä kolmeen kohdetta. Jokainen saa oman värinsä, rataviivansa ja tietorivinsä. Kartta sovitetaan valittuihin kohteisiin. **Näytä valitut kartalla** sovittaa kartan uudelleen. Sulje hakupaneeli **Valmis**-painikkeella näyttökäyttöä varten. Karttapisteen tai lähiluettelon kohteen painaminen lisää sen seurantaan, jos tilaa on.
 
@@ -31,7 +31,7 @@ Valitut NORAD-tunnukset tallentuvat julkaistun sivun osoitteeseen, esimerkiksi `
 
 ## Mitä näytetään
 
-- CelesTrakin ryhmät: sää, maanhavainnointi, tiede, operatiivinen GPS ja Galileo sekä ISS ja Tiangong. Telakoituneita asemaosia, erikseen luetteloituja huoltoaluksia, rakettivaiheita tai nimellä merkittyä romua ei esitetä erillisinä asemina. Kyse ei ole kaikista satelliiteista. Starlink ei kuulu ensimmäiseen versioon.
+- CelesTrakin aktiivisten satelliittien luettelo (`active`). Starlinkit ovat omassa ryhmässään; aiemman lähdeaineiston sää-, maanhavainnointi-, tiede- ja navigointiluokitukset säilytetään. Muut luokittelemattomat satelliitit ovat ryhmässä **Muut**; se ei tarkoita tiettyä käyttötarkoitusta. Nimellä merkityt romut ja rakettivaiheet suodatetaan pois.
 - Kartan piste on satelliitin **alisatelliittipiste**, ei satelliitin etäisyys havaitsijasta. Lähimpien kohteiden etäisyys mitataan maanpinnalla Helsinkiin.
 - Suomen lähialue tarkoittaa 1 500 km:n ympyrää Helsingistä, ei valtakunnan rajojen sisäpuolta.
 - Helsingin taivaalla tarkoittaa yli 10°:n laskennallista korkeuskulmaa. Se ei tarkoita paljain silmin näkyvää satelliittia.
@@ -44,7 +44,7 @@ Valitut NORAD-tunnukset tallentuvat julkaistun sivun osoitteeseen, esimerkiksi `
 
 Ratatiedot ovat aitoa CelesTrakin GP-aineistoa OMM-yhteensopivana JSONina. Paikat lasketaan satellite.js:n SGP4-mallilla kerran sekunnissa. Tämä ei ole live-paikannustelemetriaa. Ratamallin virhe kasvaa ajan mukana ja voi muuttua nopeasti ratamuutoksissa. Tietoja ei saa käyttää operatiiviseen avaruusliikenteen turvallisuus- tai törmäysarviointiin.
 
-GitHubin ajastettu julkaisu hakee kuusi rajattua ryhmää kuuden tunnin välein. GitHub voi viivästää ajoja; inaktiivisen julkisen repositoryn ajastukset voivat poistua käytöstä. Näyttösivu tarkistaa oman julkaistun datatiedostonsa 15 minuutin välein, mutta ei käy itse CelesTrakissa. Päivitä-painike hakee vain julkaistun tiedoston, ei uutta aineistoa lähteestä.
+GitHubin ajastettu julkaisu hakee yhden aktiivisten satelliittien luettelon kuuden tunnin välein. GitHub voi viivästää ajoja; inaktiivisen julkisen repositoryn ajastukset voivat poistua käytöstä. Näyttösivu tarkistaa oman julkaistun datatiedostonsa 15 minuutin välein, mutta ei käy itse CelesTrakissa. Päivitä-painike hakee vain julkaistun tiedoston, ei uutta aineistoa lähteestä.
 
 Hakuaika ja yksittäisen ratatiedon epoch ovat eri asioita. Molemmat on huomioitu: yli 8 h sitten haetusta aineistosta varoitetaan, yli 48 h vanhat radat merkitään, yli 7 vrk vanhoista radoista ei piirretä pisteitä. ISS-ohitusta ei lasketa yli 48 h vanhasta radasta. Osa GPS/Galileo-radoista voi olla muita ryhmiä vanhempia; varoitus ei itsessään osoita vikaa lähteen haussa.
 

@@ -9,7 +9,18 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / 'data'
 PAUSE = DATA / 'update-blocked.json'
 TARGET = DATA / 'orbits.json'
-GROUPS = ['stations', 'weather', 'resource', 'science', 'gps-ops', 'galileo']
+GROUPS = ['active']
+
+def classify(omm, previous):
+    identifier = int(omm['NORAD_CAT_ID'])
+    name = omm['OBJECT_NAME'].upper()
+    if identifier in (25544, 48274):
+        return 'stations'
+    if name.startswith('STARLINK'):
+        return 'starlink'
+    # Retain source-derived categories from the earlier six-group catalogue.
+    # Unclassified entries are explicitly labelled "other active", not guessed.
+    return previous.get(identifier, 'active')
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -25,10 +36,12 @@ def main():
         print('Source requests paused. Inspect data/update-blocked.json, fix the cause, then run manually with resume_source enabled.', file=sys.stderr)
         return 1
     # Do not request the source again less than two hours after a successful fetch.
+    previous = {}
     if TARGET.exists():
         old = json.loads(TARGET.read_text())
+        previous = {int(item['omm']['NORAD_CAT_ID']): item['group'] for item in old['satellites']}
         elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(old['generatedAt'].replace('Z', '+00:00'))).total_seconds()
-        if elapsed < 7200 and not PAUSE.exists():
+        if elapsed < 7200 and old.get('groups') == GROUPS and not PAUSE.exists():
             print('Previous data is less than two hours old; no source request.')
             return 0
     opener = urllib.request.build_opener(NoRedirect)
@@ -50,13 +63,12 @@ def main():
                     raise ValueError('Missing required OMM fields')
                 identifier = int(omm['NORAD_CAT_ID'])
                 name = omm['OBJECT_NAME']
-                if group == 'stations' and name not in ('ISS (ZARYA)', 'CSS (TIANHE)'):
-                    continue
                 if ' DEB' in name or ' R/B' in name or identifier in seen:
                     continue
                 seen.add(identifier)
-                satellites.append({'group': 'navigation' if group in ('gps-ops', 'galileo') else group, 'omm': omm})
-                counts[group] = counts.get(group, 0) + 1
+                category = classify(omm, previous)
+                satellites.append({'group': category, 'omm': omm})
+                counts[category] = counts.get(category, 0) + 1
         result = {'generatedAt': now(), 'source': 'CelesTrak GP / OMM JSON', 'groups': GROUPS, 'counts': counts, 'satellites': satellites}
         temp = TARGET.with_suffix('.tmp')
         temp.write_text(json.dumps(result, separators=(',', ':')), encoding='utf-8')
