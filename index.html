@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07151d">
+  <title>Satelliittitutka — toimitusnäyttö</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/satellite.js@6.0.1/dist/satellite.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+<main class="dashboard">
+  <header>
+    <div class="mast"><span class="eyebrow">AVARUUDEN LIIKENNE</span><span class="live"><i></i> LASKETTU NYKYHETKI</span></div>
+    <div class="title-row"><h1>Satelliittitutka<span class="title-dot">.</span></h1><div class="clock"><strong id="clock">--:--:--</strong><span id="date">HELSINKI · EET</span></div></div>
+    <p class="intro">Mitä yläpuolellamme liikkuu juuri nyt?</p>
+  </header>
+  <section class="stats" aria-label="Seurannan yhteenveto">
+    <div><strong id="total">—</strong><span>KOHTEITA RYHMÄSSÄ</span></div>
+    <div><strong id="nearby">—</strong><span>SUOMEN LÄHELLÄ¹</span></div>
+    <div><strong id="above">—</strong><span>HELSINGIN TAIVAALLA²</span></div>
+  </section>
+  <section class="map-section" aria-label="Satelliittien kartta">
+    <div id="map"></div><canvas id="satellites" aria-hidden="true"></canvas>
+    <div class="map-top"><span class="map-label"><i></i><span id="map-title">POHJOIS-EUROOPPA</span></span><div class="map-controls"><button id="region" type="button">Maailma</button><button id="fullscreen" type="button" title="Koko näyttö" aria-label="Koko näyttö">⛶</button></div></div>
+    <div class="map-error" id="map-error" hidden>Karttapohjan lataus epäonnistui. Ratapisteet näkyvät edelleen.</div>
+    <div class="map-bottom"><span><b class="key station"></b>Avaruusasemat</span><span><b class="key weather"></b>Sää / maanhavainnointi</span><span><b class="key other"></b>Tiede / navigointi</span></div>
+  </section>
+  <nav class="filters" aria-label="Satelliittiryhmä">
+    <button type="button" class="active" data-filter="all">Kaikki</button><button type="button" data-filter="weather">Sää</button><button type="button" data-filter="resource">Maanhavainnointi</button><button type="button" data-filter="science">Tiede</button><button type="button" data-filter="stations">Asemat</button><button type="button" data-filter="navigation">Navigointi</button>
+  </nav>
+  <details class="search-panel" id="search-panel">
+    <summary><span>⌕ Hae ja valitse satelliitteja</span><span id="tracking-count">0 / 3 valittu</span></summary>
+    <div class="search-popover">
+      <label for="sat-search">Hae nimellä tai NORAD-tunnuksella</label>
+      <input id="sat-search" type="search" placeholder="ISS, NOAA, Sentinel tai 25544…" autocomplete="off">
+      <p id="search-message" role="status">Voit valita enintään kolme kohdetta. Haku kattaa ladatun satelliittivalikoiman.</p>
+      <div id="search-results" aria-label="Hakutulokset"></div>
+      <div class="search-actions"><button id="fit-tracked" type="button">Näytä valitut kartalla</button><button id="clear-tracked" type="button">Tyhjennä valinnat</button><button id="close-search" type="button">Valmis</button></div>
+      <p class="link-note">Julkaistulla sivulla valinnat tallentuvat osoitteeseen. Kopioi valinnan jälkeen selaimen osoite QEM:ään.</p>
+    </div>
+  </details>
+  <section class="detail" aria-live="off">
+    <div class="detail-heading"><span class="eyebrow" id="detail-label">SEURATTAVA KOHDE</span><button id="auto" type="button" class="auto on">● Automaattinen vaihto</button></div>
+    <div id="single-detail">
+    <div class="sat-title"><h2 id="selected-name">Haetaan ratatietoja…</h2><span id="selected-group">—</span></div>
+    <div class="measurements"><div><strong id="height">—</strong><span>KORKEUS · KM</span></div><div><strong id="speed">—</strong><span>NOPEUS · KM/H</span></div><div><strong id="period">—</strong><span>KIERROS · MIN</span></div></div>
+    <div class="detail-bottom"><span id="coordinates">—</span><span id="orbit-age">—</span></div>
+    </div><div id="tracked-details" hidden></div>
+  </section>
+  <section class="lower">
+    <div class="near-panel"><div class="panel-head"><h3>Lähimpänä Helsinkiä</h3><span>ETÄISYYS MAANPINNALLA</span></div><div id="near-list"><p class="empty">Ratatiedot latautuvat.</p></div></div>
+    <div class="pass-panel"><span class="eyebrow">SEURAAVA ISS-OHITUS</span><strong id="pass-time">Lasketaan…</strong><p id="pass-info">Helsingin horisontista vähintään 10°.</p><span class="pass-note">Laskennallinen ohitus ≠ näkyvyys paljain silmin.</span></div>
+  </section>
+  <footer><div class="status-row"><span id="data-status" role="status">Ladataan ratatietoja…</span><button type="button" id="refresh">Päivitä</button></div><p id="data-note">CelesTrak · SGP4-ratalaskenta · Ei paikannustelemetriaa. Valikoidut satelliittiryhmät, ei koko kiertorata.</p><p class="definitions">¹ Alisatelliittipiste enintään 1 500 km Helsingistä. ² Yli 10° Helsingin horisontin yläpuolella; ei näkyvyyslupaus. Ryhmäsuodatin rajaa taustakartan kohteet ja luvut; valitut näkyvät aina. Rata: −30 / +90 min.</p></footer>
+</main>
+</body></html>
