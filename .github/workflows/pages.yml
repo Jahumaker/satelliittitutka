@@ -1,0 +1,76 @@
+name: Update orbits and publish Pages
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 1,7,13,19 * * *'
+  workflow_dispatch:
+    inputs:
+      resume_source:
+        description: 'Resume CelesTrak requests after investigating a source error'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: satellite-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Update orbital data
+        id: orbits
+        if: github.event_name != 'push'
+        continue-on-error: true
+        env:
+          RESUME_SOURCE: ${{ inputs.resume_source || 'false' }}
+        run: python scripts/update_orbits.py
+
+      - name: Persist data and source pause state
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/
+          if ! git diff --cached --quiet; then
+            git commit -m "Update orbital data or source status [skip ci]"
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - name: Stage public site
+        run: |
+          mkdir -p _site/data
+          cp index.html app.js styles.css _site/
+          touch _site/.nojekyll
+          cp data/orbits.json _site/data/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Report source error after publishing last good data
+        if: steps.orbits.outcome == 'failure'
+        run: |
+          echo "Source requests paused. Inspect data/update-blocked.json. Last good data was published."
+          exit 1
