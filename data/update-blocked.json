@@ -1,0 +1,6 @@
+{
+  "blockedAt": "2026-11-09T08:04:03.439125+00:00",
+  "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=json",
+  "error": "HTTP Error 403: Forbidden",
+  "action": "Investigate before manually resuming. No automatic source retries."
+}
