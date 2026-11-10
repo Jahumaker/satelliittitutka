@@ -1,7 +1,7 @@
 """Fetch CelesTrak once per group; stop and persist a pause on any error.
 Only Python standard library. Run from the repository root.
 """
-import json, os, sys, urllib.request, urllib.error
+import json, os, sys, urllib.request, urllib.error, re, html
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -29,6 +29,23 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def now():
     return datetime.now(timezone.utc).isoformat()
 
+def http_details(exc):
+    if not isinstance(exc, urllib.error.HTTPError):
+        return {}
+    # One response only: retain the provider's explanation, never retry or follow redirects.
+    details = {'httpStatus': exc.code}
+    details['responseHeaders'] = {
+        key: exc.headers.get(key) for key in ('Content-Type', 'Retry-After', 'Location', 'Server')
+        if exc.headers and exc.headers.get(key)
+    }
+    try:
+        body = exc.read(16384).decode('utf-8', errors='replace')
+        body = re.sub(r'<(script|style)\b[^>]*>.*?</\1>', '', body, flags=re.I | re.S)
+        details['responseExplanation'] = re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', body))).strip()[:6000]
+    except Exception:
+        details['responseExplanation'] = 'Could not read the error response body.'
+    return details
+
 def main():
     DATA.mkdir(exist_ok=True)
     resume = os.environ.get('RESUME_SOURCE', 'false').lower() == 'true'
@@ -41,7 +58,7 @@ def main():
         old = json.loads(TARGET.read_text())
         previous = {int(item['omm']['NORAD_CAT_ID']): item['group'] for item in old['satellites']}
         elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(old['generatedAt'].replace('Z', '+00:00'))).total_seconds()
-        if elapsed < 7200 and old.get('groups') == GROUPS and not PAUSE.exists():
+        if elapsed < 7200 and old.get('groups') == GROUPS:
             print('Previous data is less than two hours old; no source request.')
             return 0
     opener = urllib.request.build_opener(NoRedirect)
@@ -78,6 +95,7 @@ def main():
         return 0
     except Exception as exc:
         error = {'blockedAt': now(), 'url': url, 'error': str(exc), 'action': 'Investigate before manually resuming. No automatic source retries.'}
+        error.update(http_details(exc))
         PAUSE.write_text(json.dumps(error, indent=2), encoding='utf-8')
         print(json.dumps(error), file=sys.stderr)
         return 1
