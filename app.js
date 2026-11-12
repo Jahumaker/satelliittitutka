@@ -22,6 +22,10 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
   const shownSatellites=()=>tracked.length?tracked.map(t=>sats.find(s=>s.id===t.id)).filter(Boolean):(selected?[selected]:[]);
   let lastAuto=Date.now(), lastTrail=0, lastPass=0, lastRows=0, refreshing=false;
   let pass=null, generation=0, lastError='', painted=[];
+  const BACKGROUND_INTERVAL=30000;
+  let backgroundPoints=[], lastBackground=0, backgroundDirty=true, backgroundKey='', backgroundPainted=[];
+  let backgroundCanvas=document.createElement('canvas'), backgroundCalculations=0, foregroundCalculations=0, backgroundDraws=0, lastStatus=0;
+  const invalidateBackground=()=>{backgroundDirty=true;};
   const dist=(a,b,c,d)=>{const x=Math.sin((c-a)*RAD/2)**2+Math.cos(a*RAD)*Math.cos(c*RAD)*Math.sin((d-b)*RAD/2)**2;return 6371*2*Math.asin(Math.min(1,Math.sqrt(x)));};
   const ageHours = (s, now=Date.now()) => Math.abs(now-s.epoch)/3600000;
   function clock(){const d=new Date();$('clock').textContent=new Intl.DateTimeFormat('fi-FI',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Europe/Helsinki'}).format(d);$('date').textContent=new Intl.DateTimeFormat('fi-FI',{day:'numeric',month:'numeric',year:'numeric',timeZone:'Europe/Helsinki'}).format(d)+' · HELSINKI';}
@@ -52,7 +56,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     settingView=false;saveMapView();draw();
   }
   function fitTracked(){if(allPoints.some(p=>isTracked(p.s.id)))applyMapView('tracked');}
-  function changeTracking(){lastTrail=0;detailSignature='';searchSignature='';auto=tracked.length===0;lastAuto=Date.now();selected=tracked.length?sats.find(s=>s.id===tracked[0].id):null;saveSelection();updateAuto();renderTracking();tick();}
+  function changeTracking(){invalidateBackground();lastTrail=0;detailSignature='';searchSignature='';auto=tracked.length===0;lastAuto=Date.now();selected=tracked.length?sats.find(s=>s.id===tracked[0].id):null;saveSelection();updateAuto();renderTracking();tick();}
   function addTracked(s,fit=true){if(isTracked(s.id)){if(fit)fitTracked();return;}if(tracked.length>=3){$('search-message').textContent='Kolme kohdetta on jo valittu. Poista ensin yksi valinta.';return;}const color=TRACK_COLORS.find(c=>!tracked.some(t=>t.color===c));tracked.push({id:s.id,color});changeTracking();if(fit)fitTracked();}
   function removeTracked(id){tracked=tracked.filter(t=>t.id!==id);changeTracking();}
   function select(s,manual=false){if(manual){addTracked(s);return;}selected=s;lastTrail=0;renderDetail();draw();}
@@ -69,7 +73,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
   }
   function renderDetail(){
     if(tracked.length){renderTrackedDetails();return;}
-    const p=points.find(p=>p.s.id===selected?.id);
+    const p=allPoints.find(p=>p.s.id===selected?.id);
     if(!p){$('selected-name').textContent=sats.length?'Ei tuoretta ratatietoa':'Ratatietoja ei saatavilla';$('selected-group').textContent='';for(const id of ['height','speed','period','coordinates','orbit-age'])$(id).textContent='—';return;}
     const s=p.s;$('selected-name').textContent=s.name;$('selected-name').title=s.name+' · NORAD '+s.id;
     $('selected-group').textContent=GROUPS[s.group];$('height').textContent=fmt.format(p.height);$('speed').textContent=fmt.format(p.speed);$('period').textContent=fmt.format(1440/s.omm.MEAN_MOTION);
@@ -117,7 +121,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     for(const row of list.children){
       const a=allPoints.find(p=>p.s.id===Number(row.dataset.a)),b=allPoints.find(p=>p.s.id===Number(row.dataset.b));
       const value=row.querySelector('.separation-value');
-      const fresh=a&&b&&ageHours(a.s,now.getTime())<=48&&ageHours(b.s,now.getTime())<=48;
+      const fresh=a&&b&&a.calculatedAt===now.getTime()&&b.calculatedAt===now.getTime()&&ageHours(a.s,now.getTime())<=48&&ageHours(b.s,now.getTime())<=48;
       if(!fresh){value.textContent='—';value.removeAttribute('data-km');row.title='Etäisyyttä ei näytetä: ratatieto puuttuu tai on yli 48 tuntia vanha.';row.classList.add('warning');continue;}
       // Both vectors are in the same Earth-centred inertial frame at the exact same instant.
       const km=Math.hypot(a.eci.x-b.eci.x,a.eci.y-b.eci.y,a.eci.z-b.eci.z);
@@ -147,9 +151,24 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
       const distance=document.createElement('span');distance.className='distance';distance.textContent=fmt.format(p.distance)+' km';b.append(key,name,distance);b.onclick=()=>select(p.s,true);target.append(b);}
   }
   function draw(){
-    if(!map||!ctx)return;const size=map.getSize(),dpr=Math.min(2,window.devicePixelRatio||1);
-    if(canvas.width!==Math.round(size.x*dpr)||canvas.height!==Math.round(size.y*dpr)){canvas.width=Math.round(size.x*dpr);canvas.height=Math.round(size.y*dpr);}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,size.x,size.y);painted=[];
-    const displayPoints=allPoints.filter(p=>tracked.length&&!$('show-background').checked?isTracked(p.s.id):(filter==='all'||p.s.group===filter||isTracked(p.s.id)));
+    if(!map||!ctx)return;
+    const size=map.getSize(),dpr=Math.min(1,window.devicePixelRatio||1);
+    const width=Math.round(size.x*dpr),height=Math.round(size.y*dpr);
+    if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;backgroundDirty=true;}
+    const activeIds=new Set(shownSatellites().map(s=>s.id));
+    const center=map.getCenter(),key=[size.x,size.y,center.lat,center.lng,map.getZoom(),filter,[...activeIds].join(','),$('show-background').checked].join('|');
+    if(backgroundDirty||key!==backgroundKey){
+      backgroundKey=key;backgroundDirty=false;backgroundDraws++;
+      if(backgroundCanvas.width!==width||backgroundCanvas.height!==height){backgroundCanvas.width=width;backgroundCanvas.height=height;}
+      const main=ctx;ctx=backgroundCanvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,size.x,size.y);painted=[];
+      if(!tracked.length||$('show-background').checked)paintPoints(backgroundPoints.filter(p=>!activeIds.has(p.s.id)&&(filter==='all'||p.s.group===filter)),size);
+      backgroundPainted=painted;ctx=main;
+    }
+    ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,size.x,size.y);ctx.drawImage(backgroundCanvas,0,0,size.x,size.y);
+    painted=backgroundPainted.slice();
+    paintPoints(allPoints.filter(p=>activeIds.has(p.s.id)),size);
+  }
+  function paintPoints(displayPoints,size){
     const visible=displayPoints.map(p=>({...p,xy:map.latLngToContainerPoint([p.lat,p.lon])})).filter(p=>p.xy.x>-15&&p.xy.x<size.x+15&&p.xy.y>-15&&p.xy.y<size.y+15);
     const labelIds=new Set([...visible].sort((a,b)=>(a.s.id===selected?.id?-1:b.s.id===selected?.id?1:a.distance-b.distance)).slice(0,world?7:9).map(p=>p.s.id));
     const scale=Math.max(.65,Math.min(1.6,size.x/850)),labels=[];
@@ -194,15 +213,26 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     const dayLabel=today===day?'Tänään':new Intl.DateTimeFormat('fi-FI',{weekday:'short',day:'numeric',month:'numeric',timeZone:'Europe/Helsinki'}).format(new Date(pass.start));
     $('pass-time').textContent=started?'Juuri nyt':dayLabel+' '+hhmm(new Date(pass.start));$('pass-info').textContent=`${started?'Päättyy noin '+hhmm(new Date(pass.end)):'Alkaa noin '+fmt.format((pass.start-now)/60000)+' minuutin kuluttua'}. Suurin korkeuskulma noin ${fmt.format(pass.max)}°. Ajat: Helsinki.`;}
   function tick(){
-    clock();const now=new Date();allPoints=sats.map(s=>position(s,now)).filter(Boolean);points=allPoints.filter(p=>filter==='all'||p.s.group===filter);
+    if(document.hidden)return;
+    clock();const now=new Date();
+    // Whole-catalog propagation runs at most once per 30 seconds, not every tick.
+    const backgroundDue=!lastBackground||now.getTime()-lastBackground>=BACKGROUND_INTERVAL;
+    if(backgroundDue){
+      backgroundPoints=sats.map(s=>position(s,now)).filter(Boolean);lastBackground=now.getTime();backgroundCalculations++;invalidateBackground();
+    }
+    points=backgroundPoints.filter(p=>filter==='all'||p.s.group===filter);
+    allPoints=backgroundPoints;
     $('total').textContent=fmt.format(points.length);$('nearby').textContent=fmt.format(points.filter(p=>p.distance<=1500).length);$('above').textContent=fmt.format(points.filter(p=>p.elevation>=10).length);
     if(tracked.length)selected=sats.find(s=>s.id===tracked[0].id)||null;
     else{if(!points.some(p=>p.s.id===selected?.id))selected=null;
     if(!selected&&points.length)selected=[...points].sort((a,b)=>a.distance-b.distance)[0].s;}
     if(auto&&now.getTime()-lastAuto>=25000&&points.length){const near=[...points].sort((a,b)=>a.distance-b.distance).slice(0,8);const i=near.findIndex(p=>p.s.id===selected?.id);selected=near[(i+1)%near.length].s;lastAuto=now.getTime();lastTrail=0;}
+    const active=shownSatellites(),activeIds=new Set(active.map(s=>s.id));
+    const livePoints=active.map(s=>{foregroundCalculations++;return position(s,now);}).filter(Boolean);
+    allPoints=backgroundPoints.filter(p=>!activeIds.has(p.s.id)).concat(livePoints);
     if(now.getTime()-lastTrail>45000)updateTrail(now);
-    renderDetail();renderSeparations(now);renderRows(now.getTime());draw();renderStatus();renderSearch();
-    if(now.getTime()-lastPass>600000)calculatePass();else renderPass();
+    renderDetail();renderSeparations(now);renderRows(now.getTime());draw();if(now.getTime()-lastStatus>=BACKGROUND_INTERVAL){renderStatus();lastStatus=now.getTime();}renderSearch();
+    if(tracked.length<2){if(now.getTime()-lastPass>600000)calculatePass();else renderPass();}
   }
   async function loadData(){
     if(refreshing)return;refreshing=true;$('refresh').disabled=true;
@@ -222,7 +252,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
       for(const item of json.satellites){try{const omm=item.omm;if(!omm||!Number.isFinite(Number(omm.NORAD_CAT_ID))||!GROUPS[item.group])throw new Error('Ratatietue puuttuu');const epoch=Date.parse(omm.EPOCH+( /Z$|[+-]\d\d:\d\d$/.test(omm.EPOCH)?'':'Z'));if(!Number.isFinite(epoch))throw new Error('Epoch');const rec=satellite.json2satrec(omm);if(rec.error)throw new Error('SGP4 '+rec.error);next.push({id:Number(omm.NORAD_CAT_ID),name:omm.OBJECT_NAME,group:item.group,omm,rec,epoch});}catch(e){invalid++;}}
       if(!next.length)throw new Error('Ratojen laskenta ei onnistunut');data=json;sats=next;lastError=invalid?invalid+' virheellistä ratatietuetta ohitettu':'';generation++;
       if(generation===1&&requestedIds.length){for(const id of requestedIds){tracked.push({id,color:TRACK_COLORS[tracked.length]});}auto=!tracked.length;}
-      lastTrail=0;lastPass=0;lastRows=0;detailSignature='';searchSignature='';updateAuto();renderTracking();tick();if(generation===1&&tracked.length)fitTracked();
+      lastBackground=0;lastStatus=0;invalidateBackground();lastTrail=0;lastPass=0;lastRows=0;detailSignature='';searchSignature='';updateAuto();renderTracking();tick();if(generation===1&&tracked.length)fitTracked();
     }catch(e){console.error('Satelliittitutka:',e);lastError='Ratatietojen päivitys epäonnistui';if(!data){status(lastError+': '+e.message,'error');$('selected-name').textContent='Ratatiedot eivät latautuneet';$('near-list').textContent='Tarkista verkkoyhteys ja data/orbits.json.';$('pass-time').textContent='Ei ratatietoa';}else renderStatus();}
     finally{refreshing=false;$('refresh').disabled=false;}
   }
@@ -238,7 +268,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     for(let lon=-180;lon<=180;lon+=30)L.polyline([[-85,lon],[85,lon]],{color:'#80b3c3',weight:.5,opacity:.18,interactive:false}).addTo(map);
     L.circle([60.1699,24.9384],{radius:1500000,color:'#59edbf',weight:1,dashArray:'4 7',opacity:.35,fillColor:'#59edbf',fillOpacity:.025,interactive:false}).addTo(map);
     L.circleMarker([60.1699,24.9384],{radius:4,color:'#f0f5f5',weight:1,fillColor:'#59edbf',fillOpacity:1}).addTo(map).bindTooltip('HELSINKI',{direction:'bottom',permanent:true,className:'home-label'});
-    map.on('move zoom resize',draw);map.on('click',e=>{let best=null,range=24;for(const p of painted){const d=Math.hypot(p.x-e.containerPoint.x,p.y-e.containerPoint.y);if(d<range){best=p;range=d;}}if(best)select(best.s,true);});
+    map.on('move zoom resize',()=>{invalidateBackground();draw();});map.on('click',e=>{let best=null,range=24;for(const p of painted){const d=Math.hypot(p.x-e.containerPoint.x,p.y-e.containerPoint.y);if(d<range){best=p;range=d;}}if(best)select(best.s,true);});
     map.on('moveend zoomend',()=>{if(!settingView){viewMode='custom';world=map.getZoom()<=2;$('map-title').textContent='OMA KARTTARAJAUS';}saveMapView();});
     new ResizeObserver(()=>{const mode=viewMode;settingView=true;map.invalidateSize({animate:false,pan:false});settingView=false;if(mode!=='custom')applyMapView(mode);draw();}).observe($('map'));
     if(!hasSavedView)applyMapView('region');else $('map-title').textContent='OMA KARTTARAJAUS';
@@ -247,8 +277,8 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     $('auto').onclick=()=>{if(tracked.length){tracked=[];changeTracking();}else{auto=!auto;lastAuto=Date.now();updateAuto();}};$('refresh').onclick=loadData;
     document.querySelector('.map-controls').append($('background-control'));
     $('show-background').checked=viewParams.get('bg')!=='0';
-    $('show-background').onchange=()=>{try{const url=new URL(location.href);url.searchParams.set('bg',$('show-background').checked?'1':'0');history.replaceState(null,'',url);}catch(e){}draw();};
-    const version=document.createElement('span');version.className='display-version';version.textContent=' · Näyttöversio 12.11. / latauskorjaus';document.querySelector('footer').append(version);
+    $('show-background').onchange=()=>{invalidateBackground();try{const url=new URL(location.href);url.searchParams.set('bg',$('show-background').checked?'1':'0');history.replaceState(null,'',url);}catch(e){}draw();};
+    const version=document.createElement('span');version.className='display-version';version.textContent=' · Näyttöversio 12.11. / kevyt · Valitut 1 s, tausta ja laskurit 30 s';document.querySelector('footer').append(version);
     $('sat-search').oninput=()=>{searchSignature='';renderSearch();};
     $('search-panel').ontoggle=()=>{if($('search-panel').open){searchSignature='';renderSearch();$('sat-search').focus();}};
     $('sat-search').onkeydown=e=>{if(e.key==='Escape')$('search-panel').open=false;};
@@ -256,7 +286,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===b));selected=null;lastRows=0;lastTrail=0;tick();});
     loadData();setInterval(tick,1000);setInterval(loadData,15*60000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();loadData();}});
-    window.radarDiagnostics=()=>({loaded:sats.length,calculated:points.length,selected:selected?.name,tracked:tracked.map(t=>({...t,name:sats.find(s=>s.id===t.id)?.name})),tracks:track?.getLayers().length||0,trackedVisible:painted.filter(p=>isTracked(p.s.id)).map(p=>p.s.id),auto,filter,generation,dataGeneratedAt:data?.generatedAt,pass,lastError,mapSize:map.getSize(),zoom:map.getZoom(),center:map.getCenter(),bounds:map.getBounds(),viewMode,basemap:'bundled-natural-earth',basemapFeatures:window.RADAR_WORLD?.features?.length||0,library:typeof satellite.json2satrec});
+    window.radarDiagnostics=()=>({loaded:sats.length,calculated:points.length,backgroundIntervalMs:BACKGROUND_INTERVAL,backgroundCalculations,foregroundCalculations,backgroundDraws,backgroundCalculatedAt:lastBackground,liveCalculatedAt:allPoints.filter(p=>isTracked(p.s.id)).map(p=>({id:p.s.id,time:p.calculatedAt})),selected:selected?.name,tracked:tracked.map(t=>({...t,name:sats.find(s=>s.id===t.id)?.name})),tracks:track?.getLayers().length||0,trackedVisible:painted.filter(p=>isTracked(p.s.id)).map(p=>p.s.id),auto,filter,generation,dataGeneratedAt:data?.generatedAt,pass,lastError,mapSize:map.getSize(),zoom:map.getZoom(),center:map.getCenter(),bounds:map.getBounds(),viewMode,basemap:'bundled-natural-earth',basemapFeatures:window.RADAR_WORLD?.features?.length||0,library:typeof satellite.json2satrec});
   }
   try{init();}catch(e){console.error('Tutkan käynnistys:',e);status('Tutka ei käynnistynyt: '+e.message+'. Lataa verkkosivunäkymä uudelleen.','error');$('selected-name').textContent='Käynnistys epäonnistui';$('pass-time').textContent='Ei laskentaa';}
 })();
