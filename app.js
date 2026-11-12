@@ -207,8 +207,17 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
   async function loadData(){
     if(refreshing)return;refreshing=true;$('refresh').disabled=true;
     try{
-      const r=await fetch('./data/orbits.json',{cache:'no-cache'});if(!r.ok)throw new Error('Ratatietotiedosto: HTTP '+r.status);
-      const json=await r.json();if(!Array.isArray(json.satellites)||!json.satellites.length||!Number.isFinite(Date.parse(json.generatedAt)))throw new Error('Virheellinen ratatietotiedosto');
+      let json;
+      // Timeout includes response body. Retry only our published file, never CelesTrak.
+      for(let attempt=0;attempt<2;attempt++){
+        const controller=new AbortController();let timer;
+        try{
+          json=await Promise.race([(async()=>{const r=await fetch('./data/orbits.json'+(attempt?'?retry='+Date.now():''),{cache:'no-cache',signal:controller.signal});if(!r.ok)throw new Error('Ratatietotiedosto: HTTP '+r.status);return await r.json();})(),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('Ratatiedoston lataus aikakatkaistiin (30 s)'));},30000);})]);
+          break;
+        }catch(e){if(attempt)throw e;status('Ratatiedoston lataus keskeytyi. Yritetään kerran uudelleen…','warning');await new Promise(resolve=>setTimeout(resolve,3000));}
+        finally{clearTimeout(timer);}
+      }
+      if(!Array.isArray(json.satellites)||!json.satellites.length||!Number.isFinite(Date.parse(json.generatedAt)))throw new Error('Virheellinen ratatietotiedosto');
       const next=[];let invalid=0;
       for(const item of json.satellites){try{const omm=item.omm;if(!omm||!Number.isFinite(Number(omm.NORAD_CAT_ID))||!GROUPS[item.group])throw new Error('Ratatietue puuttuu');const epoch=Date.parse(omm.EPOCH+( /Z$|[+-]\d\d:\d\d$/.test(omm.EPOCH)?'':'Z'));if(!Number.isFinite(epoch))throw new Error('Epoch');const rec=satellite.json2satrec(omm);if(rec.error)throw new Error('SGP4 '+rec.error);next.push({id:Number(omm.NORAD_CAT_ID),name:omm.OBJECT_NAME,group:item.group,omm,rec,epoch});}catch(e){invalid++;}}
       if(!next.length)throw new Error('Ratojen laskenta ei onnistunut');data=json;sats=next;lastError=invalid?invalid+' virheellistä ratatietuetta ohitettu':'';generation++;
@@ -239,7 +248,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     document.querySelector('.map-controls').append($('background-control'));
     $('show-background').checked=viewParams.get('bg')!=='0';
     $('show-background').onchange=()=>{try{const url=new URL(location.href);url.searchParams.set('bg',$('show-background').checked?'1':'0');history.replaceState(null,'',url);}catch(e){}draw();};
-    const version=document.createElement('span');version.className='display-version';version.textContent=' · Näyttöversio 6.11. / 16.06';document.querySelector('footer').append(version);
+    const version=document.createElement('span');version.className='display-version';version.textContent=' · Näyttöversio 12.11. / latauskorjaus';document.querySelector('footer').append(version);
     $('sat-search').oninput=()=>{searchSignature='';renderSearch();};
     $('search-panel').ontoggle=()=>{if($('search-panel').open){searchSignature='';renderSearch();$('sat-search').focus();}};
     $('sat-search').onkeydown=e=>{if(e.key==='Escape')$('search-panel').open=false;};
@@ -249,5 +258,5 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();loadData();}});
     window.radarDiagnostics=()=>({loaded:sats.length,calculated:points.length,selected:selected?.name,tracked:tracked.map(t=>({...t,name:sats.find(s=>s.id===t.id)?.name})),tracks:track?.getLayers().length||0,trackedVisible:painted.filter(p=>isTracked(p.s.id)).map(p=>p.s.id),auto,filter,generation,dataGeneratedAt:data?.generatedAt,pass,lastError,mapSize:map.getSize(),zoom:map.getZoom(),center:map.getCenter(),bounds:map.getBounds(),viewMode,basemap:'bundled-natural-earth',basemapFeatures:window.RADAR_WORLD?.features?.length||0,library:typeof satellite.json2satrec});
   }
-  init();
+  try{init();}catch(e){console.error('Tutkan käynnistys:',e);status('Tutka ei käynnistynyt: '+e.message+'. Lataa verkkosivunäkymä uudelleen.','error');$('selected-name').textContent='Käynnistys epäonnistui';$('pass-time').textContent='Ei laskentaa';}
 })();
