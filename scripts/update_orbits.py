@@ -1,7 +1,7 @@
 """Fetch CelesTrak once per group; stop and persist a pause on any error.
 Only Python standard library. Run from the repository root.
 """
-import json, os, sys, urllib.request, urllib.error, re, html
+import json, os, sys, urllib.request, urllib.error, re, html, csv, io, gzip
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -10,6 +10,37 @@ DATA = ROOT / 'data'
 PAUSE = DATA / 'update-blocked.json'
 TARGET = DATA / 'orbits.json'
 GROUPS = ['active']
+CHECK = DATA / 'source-check.json'
+DIRECTORY = 'https://celestrak.org/NORAD/elements/jsonDir.php'
+
+def fetch_text(opener, url):
+    request = urllib.request.Request(url, headers={
+        'User-Agent': 'NewsroomSatelliteRadar/1.1',
+        'Accept': 'application/json, text/csv', 'Accept-Encoding': 'gzip'})
+    with opener.open(request, timeout=60) as response:
+        if response.status != 200:
+            raise RuntimeError(f'HTTP {response.status}')
+        body = response.read()
+        if response.headers.get('Content-Encoding', '').lower() == 'gzip':
+            body = gzip.decompress(body)
+        return body.decode('utf-8-sig')
+
+def write_json(path, value):
+    temp = path.with_suffix('.tmp')
+    temp.write_text(json.dumps(value, separators=(',', ':')), encoding='utf-8')
+    temp.replace(path)
+
+def csv_rows(text):
+    integers = {'NORAD_CAT_ID', 'EPHEMERIS_TYPE', 'ELEMENT_SET_NO', 'REV_AT_EPOCH'}
+    numbers = {'MEAN_MOTION', 'ECCENTRICITY', 'INCLINATION', 'RA_OF_ASC_NODE',
+               'ARG_OF_PERICENTER', 'MEAN_ANOMALY', 'BSTAR', 'MEAN_MOTION_DOT', 'MEAN_MOTION_DDOT'}
+    rows = list(csv.DictReader(io.StringIO(text)))
+    for row in rows:
+        for key in integers | numbers:
+            if key in row:
+                row[key] = int(row[key]) if key in integers else float(row[key])
+    return rows
+
 
 def classify(omm, previous):
     identifier = int(omm['NORAD_CAT_ID'])
@@ -54,6 +85,7 @@ def main():
         return 1
     # Do not request the source again less than two hours after a successful fetch.
     previous = {}
+    old = {}
     if TARGET.exists():
         old = json.loads(TARGET.read_text())
         previous = {int(item['omm']['NORAD_CAT_ID']): item['group'] for item in old['satellites']}
@@ -63,15 +95,29 @@ def main():
             return 0
     opener = urllib.request.build_opener(NoRedirect)
     satellites, seen, counts = [], set(), {}
-    url = ''
+    url = DIRECTORY
     try:
+        # The directory is the provider-recommended way to detect new GP data.
+        # Persist check times so repeated manual runs cannot poll it within an hour.
+        if CHECK.exists():
+            last = json.loads(CHECK.read_text())
+            elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(last['checkedAt'])).total_seconds()
+            if elapsed < 3600:
+                print('Directory checked less than one hour ago; no source request.')
+                return 0
+        write_json(CHECK, {'checkedAt': now()})
+        listing = json.loads(fetch_text(opener, DIRECTORY))
+        entries = [row for row in listing if row.get('FILE_NAME') == 'gp-data.csv']
+        if len(entries) != 1:
+            raise ValueError('Expected one gp-data.csv directory entry')
+        source_updated = datetime.strptime(entries[0]['FILE_MTIME'], '%Y-%m-%d %H:%M:%S UTC').replace(tzinfo=timezone.utc)
+        if old.get('sourceUpdatedAt') and source_updated <= datetime.fromisoformat(old['sourceUpdatedAt']):
+            print('Provider GP data unchanged; no catalogue download. Keeping original data timestamp.')
+            PAUSE.unlink(missing_ok=True)
+            return 0
         for group in GROUPS:
-            url = f'https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=json'
-            request = urllib.request.Request(url, headers={'User-Agent': 'NewsroomSatelliteRadar/1.0', 'Accept': 'application/json'})
-            with opener.open(request, timeout=60) as response:
-                if response.status != 200:
-                    raise RuntimeError(f'HTTP {response.status}')
-                rows = json.load(response)
+            url = f'https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=csv'
+            rows = csv_rows(fetch_text(opener, url))
             if not isinstance(rows, list) or not rows:
                 raise ValueError('Expected a nonempty OMM array')
             for omm in rows:
@@ -86,7 +132,7 @@ def main():
                 category = classify(omm, previous)
                 satellites.append({'group': category, 'omm': omm})
                 counts[category] = counts.get(category, 0) + 1
-        result = {'generatedAt': now(), 'source': 'CelesTrak GP / OMM JSON', 'groups': GROUPS, 'counts': counts, 'satellites': satellites}
+        result = {'generatedAt': now(), 'source': 'CelesTrak GP / CSV', 'sourceUpdatedAt': source_updated.isoformat(), 'groups': GROUPS, 'counts': counts, 'satellites': satellites}
         temp = TARGET.with_suffix('.tmp')
         temp.write_text(json.dumps(result, separators=(',', ':')), encoding='utf-8')
         temp.replace(TARGET)
