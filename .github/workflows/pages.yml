@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url || steps.deployment_final.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -89,8 +89,31 @@ jobs:
             }
             core.setFailed('Uploaded publication artifact did not become available within 110 seconds. Source data remains saved; no source retry was made.');
 
+      - name: Allow publication metadata to settle
+        run: sleep 20
+
       - name: Deploy Pages
         id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Wait before publication retry
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+
+      - name: Retry publication only
+        if: steps.deployment.outcome == 'failure'
+        id: deployment_retry
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Wait before final publication attempt
+        if: steps.deployment_retry.outcome == 'failure'
+        run: sleep 60
+
+      - name: Final publication attempt
+        if: steps.deployment_retry.outcome == 'failure'
+        id: deployment_final
         uses: actions/deploy-pages@v4
 
       - name: Report source error after publishing last good data
