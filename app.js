@@ -133,7 +133,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
   function renderSearch(){
     if(!$('search-panel').open)return;
     const query=$('sat-search').value.trim().toLocaleLowerCase('fi-FI'),signature=query+'|'+tracked.map(t=>t.id).join(',')+'|'+generation;if(searchSignature===signature)return;searchSignature=signature;
-    const normalizeSearch=text=>text.toLocaleLowerCase('fi-FI').replace(/iceye[\s-]*x(?=\s*\d)/g,'iceye').replace(/[^\p{L}\p{N}]/gu,'');
+    let searchCharacters;try{searchCharacters=new RegExp('[^\\p{L}\\p{N}]','gu');}catch(e){searchCharacters=/[^a-z0-9\u00c0-\u024f\u0370-\u052f]/g;}const normalizeSearch=text=>text.toLocaleLowerCase('fi-FI').replace(/iceye[\s-]*x(?=\s*\d)/g,'iceye').replace(searchCharacters,'');
     const terms=query.replace(/iceye[\s-]*x(?=\s*\d)/g,'iceye').split(/\s+/).map(normalizeSearch).filter(Boolean);
     const matches=sats.filter(s=>{const text=normalizeSearch(s.name+' '+s.id+' '+(s.id===48274?'Tiangong Tianhe Kiinan avaruusasema':'')+' '+(s.id===25544?'kansainvälinen avaruusasema':''));return terms.every(term=>text.includes(term));}).sort((a,b)=>Number(isTracked(b.id))-Number(isTracked(a.id))||a.name.localeCompare(b.name));
     const list=$('search-results');list.replaceChildren();
@@ -240,7 +240,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
       let json;
       // Timeout includes response body. Retry only our published file, never CelesTrak.
       for(let attempt=0;attempt<2;attempt++){
-        const controller=new AbortController();let timer;
+        const controller=typeof AbortController!=="undefined"?new AbortController():{signal:undefined,abort(){}};let timer;
         try{
           json=await Promise.race([(async()=>{const r=await fetch('./data/orbits.json'+(attempt?'?retry='+Date.now():''),{cache:'no-cache',signal:controller.signal});if(!r.ok)throw new Error('Ratatietotiedosto: HTTP '+r.status);return await r.json();})(),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('Ratatiedoston lataus aikakatkaistiin (30 s)'));},30000);})]);
           break;
@@ -270,7 +270,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     L.circleMarker([60.1699,24.9384],{radius:4,color:'#f0f5f5',weight:1,fillColor:'#59edbf',fillOpacity:1}).addTo(map).bindTooltip('HELSINKI',{direction:'bottom',permanent:true,className:'home-label'});
     map.on('move zoom resize',()=>{invalidateBackground();draw();});map.on('click',e=>{let best=null,range=24;for(const p of painted){const d=Math.hypot(p.x-e.containerPoint.x,p.y-e.containerPoint.y);if(d<range){best=p;range=d;}}if(best)select(best.s,true);});
     map.on('moveend zoomend',()=>{if(!settingView){viewMode='custom';world=map.getZoom()<=2;$('map-title').textContent='OMA KARTTARAJAUS';}saveMapView();});
-    new ResizeObserver(()=>{const mode=viewMode;settingView=true;map.invalidateSize({animate:false,pan:false});settingView=false;if(mode!=='custom')applyMapView(mode);draw();}).observe($('map'));
+    const resizeMap=()=>{const mode=viewMode;settingView=true;map.invalidateSize({animate:false,pan:false});settingView=false;if(mode!=='custom')applyMapView(mode);draw();};if(typeof ResizeObserver!=='undefined')new ResizeObserver(resizeMap).observe($('map'));else window.addEventListener('resize',resizeMap);
     if(!hasSavedView)applyMapView('region');else $('map-title').textContent='OMA KARTTARAJAUS';
     $('region').onclick=()=>applyMapView('world');$('finland').onclick=()=>applyMapView('region');$('map-fit-tracked').onclick=fitTracked;
     $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch(e){status('Koko näyttö ei ole tässä näkymässä sallittu. Käytä selaimen koko näytön tilaa.','warning');}};
@@ -278,7 +278,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     document.querySelector('.map-controls').append($('background-control'));
     $('show-background').checked=viewParams.get('bg')!=='0';
     $('show-background').onchange=()=>{invalidateBackground();try{const url=new URL(location.href);url.searchParams.set('bg',$('show-background').checked?'1':'0');history.replaceState(null,'',url);}catch(e){}draw();};
-    const version=document.createElement('span');version.className='display-version';version.textContent=' · Näyttöversio 12.11. / kevyt · Valitut 1 s, tausta ja laskurit 30 s';document.querySelector('footer').append(version);
+    const version=document.createElement('span');version.className='display-version';version.textContent=' · Näyttöversio 24.11. / CAS · Valitut 1 s, tausta ja laskurit 30 s';document.querySelector('footer').append(version);
     $('sat-search').oninput=()=>{searchSignature='';renderSearch();};
     $('search-panel').ontoggle=()=>{if($('search-panel').open){searchSignature='';renderSearch();$('sat-search').focus();}};
     $('sat-search').onkeydown=e=>{if(e.key==='Escape')$('search-panel').open=false;};

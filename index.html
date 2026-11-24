@@ -4,11 +4,18 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#07151d">
   <title>Satelliittitutka — toimitusnäyttö</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="leaflet-local.css?v=20261124">
   <link rel="stylesheet" href="styles.css?v=20261106-distance">
-  <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/satellite.js@6.0.1/dist/satellite.min.js"></script>
-  <script defer src="app.js?v=20261112-lightweight"></script>
+  <script>
+(function(){
+ function show(message){var el=document.getElementById('data-status');if(el)el.textContent='CAS-käynnistysvirhe: '+message;var name=document.getElementById('selected-name');if(name)name.textContent='Tutka ei käynnistynyt';}
+ window.radarBootFailure=show;
+ window.addEventListener('error',function(e){if(e.message)show(e.message);});
+ window.setTimeout(function(){var el=document.getElementById('clock');if(el&&el.textContent==='--:--:--')show('Ohjelma ei käynnistynyt 45 sekunnissa. Tarkista verkkoyhteys ja CAS-selaimen tuki.');},45000);
+ if(!Element.prototype.replaceChildren)Element.prototype.replaceChildren=function(){while(this.firstChild)this.removeChild(this.firstChild);for(var i=0;i<arguments.length;i++)this.appendChild(typeof arguments[i]==='string'?document.createTextNode(arguments[i]):arguments[i]);};
+})();
+</script>
+  <script defer src="radar-cas-20261124.js" onerror="radarBootFailure('Sovellustiedoston lataus epäonnistui.')"></script>
 </head>
 <body>
 <main class="dashboard">

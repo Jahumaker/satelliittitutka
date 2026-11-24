@@ -58,7 +58,7 @@ jobs:
       - name: Stage public site
         run: |
           mkdir -p _site/data
-          cp index.html app.js styles.css _site/
+          cp index.html app.js styles.css radar-cas-20261124.js leaflet-local.css _site/
           touch _site/.nojekyll
           cp data/orbits.json _site/data/
 
