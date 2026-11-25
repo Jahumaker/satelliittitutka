@@ -11,7 +11,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
   const fmt = new Intl.NumberFormat('fi-FI',{maximumFractionDigits:0});
   const hhmm = d => new Intl.DateTimeFormat('fi-FI',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Helsinki'}).format(d);
   const TRACK_COLORS=['#59edbf','#ffce63','#d5a3ff'];
-  let map, canvas, ctx, data, sats=[], points=[], allPoints=[], selected=null, filter='all', world=false, auto=true, track=null;
+  let map, canvas, ctx, data, sats=[], points=[], allPoints=[], selected=null, filter='all', world=false, auto=true, track=null, trailRenderer=null;
   let tracked=[], searchSignature='', detailSignature='';
   const viewParams=new URLSearchParams(location.search), savedView=(viewParams.get('view')||'').split(',').map(Number);
   const hasSavedView=savedView.length===3&&savedView.every(Number.isFinite)&&Math.abs(savedView[0])<=85&&Math.abs(savedView[1])<=180&&savedView[2]>=-2&&savedView[2]<=8;
@@ -22,7 +22,8 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
   const shownSatellites=()=>tracked.length?tracked.map(t=>sats.find(s=>s.id===t.id)).filter(Boolean):(selected?[selected]:[]);
   let lastAuto=Date.now(), lastTrail=0, lastPass=0, lastRows=0, refreshing=false;
   let pass=null, generation=0, lastError='', painted=[];
-  const BACKGROUND_INTERVAL=30000;
+  const BACKGROUND_INTERVAL=120000;
+  let backgroundJob=0, backgroundBusy=false;
   let backgroundPoints=[], lastBackground=0, backgroundDirty=true, backgroundKey='', backgroundPainted=[];
   let backgroundCanvas=document.createElement('canvas'), backgroundCalculations=0, foregroundCalculations=0, backgroundDraws=0, lastStatus=0;
   const invalidateBackground=()=>{backgroundDirty=true;};
@@ -67,7 +68,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
       const segments=[];let segment=[],previous=null;
       for(let m=-30;m<=90;m+=1){const p=position(s,new Date(now.getTime()+m*60000));if(!p){if(segment.length>1)segments.push(segment);segment=[];previous=null;continue;}if(previous&&Math.abs(p.lon-previous.lon)>180){if(segment.length>1)segments.push(segment);segment=[];}segment.push([p.lat,p.lon]);previous=p;}
       if(segment.length>1)segments.push(segment);
-      if(segments.length)layers.push(L.polyline(segments,{color:colorFor(s),opacity:.75,weight:tracked.length?2.3:1.8,dashArray:'5 7',interactive:false,renderer:L.canvas()}));
+      if(segments.length)layers.push(L.polyline(segments,{color:colorFor(s),opacity:.75,weight:tracked.length?2.3:1.8,dashArray:'5 7',interactive:false,renderer:trailRenderer}));
     }
     track=L.layerGroup(layers).addTo(map);
   }
@@ -212,14 +213,27 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Helsinki'}).format(new Date(now)),day=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Helsinki'}).format(new Date(pass.start));
     const dayLabel=today===day?'Tänään':new Intl.DateTimeFormat('fi-FI',{weekday:'short',day:'numeric',month:'numeric',timeZone:'Europe/Helsinki'}).format(new Date(pass.start));
     $('pass-time').textContent=started?'Juuri nyt':dayLabel+' '+hhmm(new Date(pass.start));$('pass-info').textContent=`${started?'Päättyy noin '+hhmm(new Date(pass.end)):'Alkaa noin '+fmt.format((pass.start-now)/60000)+' minuutin kuluttua'}. Suurin korkeuskulma noin ${fmt.format(pass.max)}°. Ajat: Helsinki.`;}
+  // Yield between small batches instead of propagating 17,000 orbits in one burst.
+  function refreshBackground(now){
+    const job=++backgroundJob, source=sats, result=[];let index=0;
+    backgroundBusy=true;
+    function step(){
+      if(job!==backgroundJob)return;
+      if(document.hidden){backgroundBusy=false;return;}
+      const end=Math.min(index+60,source.length);
+      for(;index<end;index++){const p=position(source[index],now);if(p)result.push(p);}
+      if(index<source.length){setTimeout(step,25);return;}
+      backgroundPoints=result;lastBackground=now.getTime();backgroundCalculations++;
+      backgroundBusy=false;invalidateBackground();lastRows=0;
+    }
+    step();
+  }
   function tick(){
     if(document.hidden)return;
     clock();const now=new Date();
-    // Whole-catalog propagation runs at most once per 30 seconds, not every tick.
+    // Background results are refreshed in short batches at most every two minutes.
     const backgroundDue=!lastBackground||now.getTime()-lastBackground>=BACKGROUND_INTERVAL;
-    if(backgroundDue){
-      backgroundPoints=sats.map(s=>position(s,now)).filter(Boolean);lastBackground=now.getTime();backgroundCalculations++;invalidateBackground();
-    }
+    if(backgroundDue&&!backgroundBusy&&sats.length)refreshBackground(now);
     points=backgroundPoints.filter(p=>filter==='all'||p.s.group===filter);
     allPoints=backgroundPoints;
     $('total').textContent=fmt.format(points.length);$('nearby').textContent=fmt.format(points.filter(p=>p.distance<=1500).length);$('above').textContent=fmt.format(points.filter(p=>p.elevation>=10).length);
@@ -248,17 +262,18 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
         finally{clearTimeout(timer);}
       }
       if(!Array.isArray(json.satellites)||!json.satellites.length||!Number.isFinite(Date.parse(json.generatedAt)))throw new Error('Virheellinen ratatietotiedosto');
+      if(data&&json.generatedAt===data.generatedAt){lastError='';renderStatus();return;}
       const next=[];let invalid=0;
       for(const item of json.satellites){try{const omm=item.omm;if(!omm||!Number.isFinite(Number(omm.NORAD_CAT_ID))||!GROUPS[item.group])throw new Error('Ratatietue puuttuu');const epoch=Date.parse(omm.EPOCH+( /Z$|[+-]\d\d:\d\d$/.test(omm.EPOCH)?'':'Z'));if(!Number.isFinite(epoch))throw new Error('Epoch');const rec=satellite.json2satrec(omm);if(rec.error)throw new Error('SGP4 '+rec.error);next.push({id:Number(omm.NORAD_CAT_ID),name:omm.OBJECT_NAME,group:item.group,omm,rec,epoch});}catch(e){invalid++;}}
       if(!next.length)throw new Error('Ratojen laskenta ei onnistunut');data=json;sats=next;lastError=invalid?invalid+' virheellistä ratatietuetta ohitettu':'';generation++;
       if(generation===1&&requestedIds.length){for(const id of requestedIds){tracked.push({id,color:TRACK_COLORS[tracked.length]});}auto=!tracked.length;}
-      lastBackground=0;lastStatus=0;invalidateBackground();lastTrail=0;lastPass=0;lastRows=0;detailSignature='';searchSignature='';updateAuto();renderTracking();tick();if(generation===1&&tracked.length)fitTracked();
+      backgroundJob++;backgroundBusy=false;lastBackground=0;lastStatus=0;invalidateBackground();lastTrail=0;lastPass=0;lastRows=0;detailSignature='';searchSignature='';updateAuto();renderTracking();tick();if(generation===1&&tracked.length)fitTracked();
     }catch(e){console.error('Satelliittitutka:',e);lastError='Ratatietojen päivitys epäonnistui';if(!data){status(lastError+': '+e.message,'error');$('selected-name').textContent='Ratatiedot eivät latautuneet';$('near-list').textContent='Tarkista verkkoyhteys ja data/orbits.json.';$('pass-time').textContent='Ei ratatietoa';}else renderStatus();}
     finally{refreshing=false;$('refresh').disabled=false;}
   }
   function init(){
     clock();if(typeof L==='undefined'||typeof satellite==='undefined'||typeof satellite.json2satrec!=='function'){status('Kartta- tai ratalaskentakirjasto ei latautunut. Tarkista verkkoyhteys.','error');$('selected-name').textContent='Tarvittava kirjasto puuttuu';return;}
-    canvas=$('satellites');ctx=canvas.getContext('2d');map=L.map('map',{crs:L.CRS.EPSG4326,center:hasSavedView?savedView.slice(0,2):[59,25],zoom:hasSavedView?savedView[2]:2,minZoom:-2,maxZoom:8,zoomSnap:0,zoomDelta:.5,zoomAnimation:false,worldCopyJump:false,attributionControl:true});
+    canvas=$('satellites');ctx=canvas.getContext('2d');trailRenderer=L.canvas({padding:.1});map=L.map('map',{crs:L.CRS.EPSG4326,center:hasSavedView?savedView.slice(0,2):[59,25],zoom:hasSavedView?savedView[2]:2,minZoom:-2,maxZoom:8,zoomSnap:0,zoomDelta:.5,zoomAnimation:false,worldCopyJump:false,attributionControl:true});
     if(window.RADAR_WORLD?.features?.length){
       L.geoJSON(window.RADAR_WORLD,{style:{color:'#506e7b',weight:.7,fillColor:'#264552',fillOpacity:1},interactive:false,renderer:L.canvas({padding:.3})}).addTo(map);
       map.attributionControl.addAttribution('<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> · yleistetty kartta');
@@ -278,7 +293,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     document.querySelector('.map-controls').append($('background-control'));
     $('show-background').checked=viewParams.get('bg')!=='0';
     $('show-background').onchange=()=>{invalidateBackground();try{const url=new URL(location.href);url.searchParams.set('bg',$('show-background').checked?'1':'0');history.replaceState(null,'',url);}catch(e){}draw();};
-    const version=document.createElement('span');version.className='display-version';version.textContent=' · Näyttöversio 24.11. / CAS · Valitut 1 s, tausta ja laskurit 30 s';document.querySelector('footer').append(version);
+    const version=document.createElement('span');version.className='display-version';version.textContent=' · Näyttöversio 25.11. / muistikorjaus · Valitut 1 s, tausta 2 min';document.querySelector('footer').append(version);
     $('sat-search').oninput=()=>{searchSignature='';renderSearch();};
     $('search-panel').ontoggle=()=>{if($('search-panel').open){searchSignature='';renderSearch();$('sat-search').focus();}};
     $('sat-search').onkeydown=e=>{if(e.key==='Escape')$('search-panel').open=false;};
@@ -286,7 +301,7 @@ window.RADAR_WORLD={"type":"FeatureCollection","features":[{"type":"Feature","id
     document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===b));selected=null;lastRows=0;lastTrail=0;tick();});
     loadData();setInterval(tick,1000);setInterval(loadData,15*60000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();loadData();}});
-    window.radarDiagnostics=()=>({loaded:sats.length,calculated:points.length,backgroundIntervalMs:BACKGROUND_INTERVAL,backgroundCalculations,foregroundCalculations,backgroundDraws,backgroundCalculatedAt:lastBackground,liveCalculatedAt:allPoints.filter(p=>isTracked(p.s.id)).map(p=>({id:p.s.id,time:p.calculatedAt})),selected:selected?.name,tracked:tracked.map(t=>({...t,name:sats.find(s=>s.id===t.id)?.name})),tracks:track?.getLayers().length||0,trackedVisible:painted.filter(p=>isTracked(p.s.id)).map(p=>p.s.id),auto,filter,generation,dataGeneratedAt:data?.generatedAt,pass,lastError,mapSize:map.getSize(),zoom:map.getZoom(),center:map.getCenter(),bounds:map.getBounds(),viewMode,basemap:'bundled-natural-earth',basemapFeatures:window.RADAR_WORLD?.features?.length||0,library:typeof satellite.json2satrec});
+    window.radarDiagnostics=()=>({loaded:sats.length,calculated:points.length,backgroundIntervalMs:BACKGROUND_INTERVAL,backgroundBusy,canvasCount:document.querySelectorAll('.leaflet-pane canvas').length,mapLayerCount:Object.keys(map._layers).length,backgroundCalculations,foregroundCalculations,backgroundDraws,backgroundCalculatedAt:lastBackground,liveCalculatedAt:allPoints.filter(p=>isTracked(p.s.id)).map(p=>({id:p.s.id,time:p.calculatedAt})),selected:selected?.name,tracked:tracked.map(t=>({...t,name:sats.find(s=>s.id===t.id)?.name})),tracks:track?.getLayers().length||0,trackedVisible:painted.filter(p=>isTracked(p.s.id)).map(p=>p.s.id),auto,filter,generation,dataGeneratedAt:data?.generatedAt,pass,lastError,mapSize:map.getSize(),zoom:map.getZoom(),center:map.getCenter(),bounds:map.getBounds(),viewMode,basemap:'bundled-natural-earth',basemapFeatures:window.RADAR_WORLD?.features?.length||0,library:typeof satellite.json2satrec});
   }
   try{init();}catch(e){console.error('Tutkan käynnistys:',e);status('Tutka ei käynnistynyt: '+e.message+'. Lataa verkkosivunäkymä uudelleen.','error');$('selected-name').textContent='Käynnistys epäonnistui';$('pass-time').textContent='Ei laskentaa';}
 })();
