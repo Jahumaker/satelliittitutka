@@ -8,14 +8,27 @@
   <link rel="stylesheet" href="styles.css?v=20261106-distance">
   <script>
 (function(){
- function show(message){var el=document.getElementById('data-status');if(el)el.textContent='CAS-käynnistysvirhe: '+message;var name=document.getElementById('selected-name');if(name)name.textContent='Tutka ei käynnistynyt';}
+ var firstError='',scriptLoaded=false;
+ function running(){var c=document.getElementById('clock');return c&&c.textContent!=='--:--:--';}
+ function render(){
+  if(!firstError)return;
+  var el=document.getElementById('data-status');if(el)el.textContent='CAS-käynnistysvirhe: '+firstError;
+  var name=document.getElementById('selected-name');if(name)name.textContent='Tutka ei käynnistynyt';
+  var panel=document.getElementById('boot-diagnostic');
+  if(!panel&&el){panel=document.createElement('div');panel.id='boot-diagnostic';panel.style.cssText='white-space:pre-wrap;overflow-wrap:break-word;font-size:16px;line-height:1.5;padding:12px;margin-top:8px;border:1px solid #f5b35e;color:#fff;background:#15212d';el.parentNode.parentNode.appendChild(panel);}
+  if(panel)panel.textContent='KÄYNNISTYSTARKISTUS 26.11.\n'+firstError+'\nSovellustiedoston lataustapahtuma: '+(scriptLoaded?'valmis':'ei valmistunut')+'\nSelaintuki: Promise '+(typeof window.Promise)+', fetch '+(typeof window.fetch)+', Intl '+(typeof window.Intl)+', Map '+(typeof window.Map)+'\nSelain: '+navigator.userAgent;
+ }
+ function show(message){if(!firstError)firstError=String(message);render();}
  window.radarBootFailure=show;
- window.addEventListener('error',function(e){if(e.message)show(e.message);});
- window.setTimeout(function(){var el=document.getElementById('clock');if(el&&el.textContent==='--:--:--')show('Ohjelma ei käynnistynyt 45 sekunnissa. Tarkista verkkoyhteys ja CAS-selaimen tuki.');},45000);
+ window.radarBootLoaded=function(){scriptLoaded=true;render();};
+ window.addEventListener('error',function(e){if(!running()&&e.message)show(e.message+(e.filename?' ['+e.filename.split('/').pop()+':'+e.lineno+':'+e.colno+']':''));});
+ window.addEventListener('unhandledrejection',function(e){if(!running())show('Käsittelemätön käynnistysvirhe: '+(e.reason&&e.reason.message||e.reason||'tuntematon'));});
+ document.addEventListener('DOMContentLoaded',render);
+ window.setTimeout(function(){if(!running())show(scriptLoaded?'Sovellustiedosto latautui, mutta kello ei käynnistynyt 45 sekunnissa.':'Sovellustiedoston lataus tai suoritus ei valmistunut 45 sekunnissa.');},45000);
  if(!Element.prototype.replaceChildren)Element.prototype.replaceChildren=function(){while(this.firstChild)this.removeChild(this.firstChild);for(var i=0;i<arguments.length;i++)this.appendChild(typeof arguments[i]==='string'?document.createTextNode(arguments[i]):arguments[i]);};
 })();
 </script>
-  <script defer src="radar-cas-20261124.js?v=20261125-memory" onerror="radarBootFailure('Sovellustiedoston lataus epäonnistui.')"></script>
+  <script defer src="radar-cas-20261124.js?v=20261125-memory" onload="radarBootLoaded()" onerror="radarBootFailure('Sovellustiedoston lataus epäonnistui.')"></script>
 </head>
 <body>
 <main class="dashboard">
