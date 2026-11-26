@@ -18,7 +18,7 @@
   if(!panel&&el){panel=document.createElement('div');panel.id='boot-diagnostic';panel.style.cssText='white-space:pre-wrap;overflow-wrap:break-word;font-size:16px;line-height:1.5;padding:12px;margin-top:8px;border:1px solid #f5b35e;color:#fff;background:#15212d';el.parentNode.parentNode.appendChild(panel);}
   if(panel)panel.textContent='KÄYNNISTYSTARKISTUS 26.11.\n'+firstError+'\nSovellustiedoston lataustapahtuma: '+(scriptLoaded?'valmis':'ei valmistunut')+'\nSelaintuki: Promise '+(typeof window.Promise)+', fetch '+(typeof window.fetch)+', Intl '+(typeof window.Intl)+', Map '+(typeof window.Map)+'\nSelain: '+navigator.userAgent;
  }
- function show(message){if(!firstError)firstError=String(message);render();}
+ function show(message){var current=document.getElementById('data-status');if(!firstError)firstError=current&&current.className==='error'&&current.textContent?current.textContent:String(message);render();}
  window.radarBootFailure=show;
  window.radarBootLoaded=function(){scriptLoaded=true;render();};
  window.addEventListener('error',function(e){if(!running()&&e.message)show(e.message+(e.filename?' ['+e.filename.split('/').pop()+':'+e.lineno+':'+e.colno+']':''));});
